@@ -21,8 +21,8 @@ android {
         applicationId = "com.vibemusic.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     signingConfigs {
@@ -37,6 +37,10 @@ android {
     }
 
     buildTypes {
+        // Дебаг подписан тем же релизным ключом: обновления поверх ставятся без переустановки.
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
             // Минификация выключена: правила R8 для Room/BC отложены до P-релиза.
             isMinifyEnabled = false

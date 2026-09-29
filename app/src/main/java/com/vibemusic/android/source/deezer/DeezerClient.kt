@@ -3,9 +3,9 @@ package com.vibemusic.android.source.deezer
 import android.content.Context
 import android.net.Uri
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.vibemusic.android.core.model.Track
+import com.vibemusic.android.data.ARL_KEY
+import com.vibemusic.android.data.appDataStore
 import com.vibemusic.android.source.ResolvedStream
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -25,9 +25,6 @@ import java.io.File
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-private val Context.deezerDataStore by preferencesDataStore(name = "deezer_settings")
-private val ARL_KEY = stringPreferencesKey("deezer_arl")
-
 /**
  * Клиент Deezer. Поиск — анонимный публичный API; полные потоки — через
  * gw-light сессию по ARL пользователя (cookie аккаунта) и расшифровку
@@ -42,10 +39,10 @@ class DeezerClient(private val context: Context) {
 
     private val gwBase = "https://www.deezer.com/ajax/gw-light.php"
 
-    fun arlFlow(): Flow<String> = context.deezerDataStore.data.map { it[ARL_KEY] ?: "" }
+    fun arlFlow(): Flow<String> = context.appDataStore.data.map { it[ARL_KEY] ?: "" }
 
     suspend fun setArl(arl: String) {
-        context.deezerDataStore.edit { it[ARL_KEY] = arl.trim() }
+        context.appDataStore.edit { it[ARL_KEY] = arl.trim() }
     }
 
     suspend fun arl(): String = arlFlow().first()

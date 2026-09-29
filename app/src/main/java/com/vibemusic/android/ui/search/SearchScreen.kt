@@ -146,4 +146,5 @@ private val filters = listOf(
     "local" to "Устройство",
     "ytm" to "YT Music",
     "sc" to "SoundCloud",
+    "deezer" to "Deezer",
 )

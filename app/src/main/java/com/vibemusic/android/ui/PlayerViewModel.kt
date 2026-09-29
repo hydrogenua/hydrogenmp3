@@ -19,6 +19,7 @@ import com.vibemusic.android.playback.PlayerConnection
 import com.vibemusic.android.source.deezer.DeezerClient
 import com.vibemusic.android.source.SourceRegistry
 import com.vibemusic.android.source.ytm.YtMusicPlugin
+import com.vibemusic.android.update.UpdateManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -46,6 +47,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val dao = LibraryDb.get(application).libraryDao()
     private val downloads = DownloadRepository(application, dao, registry)
     private val deezerClient = DeezerClient(application)
+    private val updates = UpdateManager(application)
 
     /** ARL-токен Deezer: пусто — источник даёт только поиск. */
     val deezerArl: StateFlow<String> = deezerClient.arlFlow()
@@ -53,6 +55,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setDeezerArl(arl: String) {
         viewModelScope.launch { deezerClient.setArl(arl) }
+    }
+
+    // Обновления.
+
+    val updateInfo: StateFlow<UpdateManager.UpdateInfo?> = updates.available
+    val updateDismissed: StateFlow<String> = updates.dismissedTag
+
+    fun checkForUpdates() {
+        viewModelScope.launch { updates.check() }
+    }
+
+    fun installUpdate() {
+        updateInfo.value?.let { updates.downloadAndInstall(it) }
+    }
+
+    fun dismissUpdate() {
+        updateInfo.value?.let { viewModelScope.launch { updates.dismiss(it.tag) } }
     }
 
     /** Избранное как Flow — экран библиотеки обновляется сам. */

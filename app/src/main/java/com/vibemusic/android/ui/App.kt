@@ -1,14 +1,20 @@
 package com.vibemusic.android.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,9 +28,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,6 +60,7 @@ import com.vibemusic.android.core.model.Track
 import com.vibemusic.android.ui.album.AlbumScreen
 import com.vibemusic.android.ui.components.Artwork
 import com.vibemusic.android.ui.components.TrackMenuDialog
+import com.vibemusic.android.ui.theme.Accent
 import com.vibemusic.android.ui.home.HomeScreen
 import com.vibemusic.android.ui.library.LibraryScreen
 import com.vibemusic.android.ui.library.PlaylistDetailScreen
@@ -76,6 +82,10 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
     // содержимое под ним видно сразу, без «прогрузки».
     var playerExpanded by remember { mutableStateOf(false) }
 
+    val updateInfo by viewModel.updateInfo.collectAsState()
+    val updateDismissed by viewModel.updateDismissed.collectAsState()
+    LaunchedEffect(Unit) { viewModel.checkForUpdates() }
+
     CrashReportDialog()
 
     Box(Modifier.fillMaxSize()) {
@@ -84,7 +94,7 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
             bottomBar = {
                 Column {
                     MiniPlayer(viewModel = viewModel, onOpenPlayer = { playerExpanded = true })
-                    VibeNavigationBar(navController, currentRoute)
+                    VibeBottomBar(navController, currentRoute)
                 }
             },
         ) { innerPadding ->
@@ -169,6 +179,28 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
             onDismiss = { menuTrack = null },
         )
     }
+
+    updateInfo?.takeIf { it.tag != updateDismissed }?.let { info ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissUpdate() },
+            title = { Text("Обновление ${info.tag}") },
+            text = {
+                Text(
+                    "Доступна версия hydrogen ${info.version}. Скачивание пройдёт в фоне, после — откроется установка.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.installUpdate()
+                    viewModel.dismissUpdate()
+                }) { Text("Обновить") }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.dismissUpdate() }) { Text("Позже") }
+            },
+        )
+    }
 }
 
 private object Routes {
@@ -224,26 +256,54 @@ private fun file_delete(context: android.content.Context) {
 private data class BottomItem(val route: String, val label: String, val icon: ImageVector)
 
 @Composable
-private fun VibeNavigationBar(navController: NavHostController, currentRoute: String?) {
+private fun VibeBottomBar(navController: NavHostController, currentRoute: String?) {
     val items = listOf(
         BottomItem(Routes.Home, "Главная", Icons.Filled.Home),
         BottomItem(Routes.Search, "Поиск", Icons.Filled.Search),
         BottomItem(Routes.Library, "Библиотека", Icons.Filled.LibraryMusic),
     )
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        items.forEach { item ->
-            NavigationBarItem(
-                selected = currentRoute == item.route,
-                onClick = {
-                    navController.navigate(item.route) {
-                        popUpTo(Routes.Home) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
-                icon = { Icon(item.icon, contentDescription = item.label) },
-                label = { Text(item.label) },
-            )
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(64.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items.forEach { item ->
+                val selected = currentRoute == item.route
+                val tint by animateColorAsState(
+                    targetValue = if (selected) {
+                        Accent
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    animationSpec = tween(180),
+                    label = "navTint",
+                )
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                        .clickable {
+                            navController.navigate(item.route) {
+                                popUpTo(Routes.Home) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                ) {
+                    Icon(item.icon, contentDescription = item.label, tint = tint, modifier = Modifier.size(24.dp))
+                    Text(
+                        item.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = tint,
+                    )
+                }
+            }
         }
     }
 }
