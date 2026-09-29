@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Vibe PoToken</title></head>
+<body>
+<script type="module">
+import { BotGuardClient, getChallenge } from './exports/botguard.js';
+import { WebPoMinter } from './exports/webpo.js';
+import { buildURL, getHeaders } from './exports/utils.js';
+
+const REQUEST_KEY = 'O43z0dpjhgX20SCx4KAo';
+
+// HTTP через Kotlin-мост: никаких CORS-сюрпризов и стабильный сетевой путь.
+// Важно: подставляем браузерный User-Agent — дефолтный okhttp/* Google мгновенно флагает.
+const BRIDGE_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+async function bridgeFetch(url, init) {
+  const method = (init && init.method) || 'GET';
+  const body = init && init.body ? String(init.body) : null;
+  const headers = Object.assign({}, (init && init.headers) || {}, { 'User-Agent': BRIDGE_UA });
+  const out = JSON.parse(VibePot.http(url, method, body, JSON.stringify(headers)));
+  if (out.err) throw new Error(out.err);
+  if (out.code < 200 || out.code > 299) {
+    throw new Error('HTTP ' + out.code + ': ' + String(out.body).slice(0, 140));
+  }
+  return new Response(out.body, { status: out.code, headers: { 'Content-Type': 'application/json' } });
+}
+
+let minter = null; // живёт в странице: повторные запросы майнят токены мгновенно
+
+async function mintPots(visitorData, videoId) {
+  if (!minter) {
+    const challenge = await getChallenge({ fetchFunction: bridgeFetch, requestKey: REQUEST_KEY, useYouTubeAPI: true });
+    const interpreterJavascript = challenge.interpreterJavascript &&
+      challenge.interpreterJavascript.privateDoNotAccessOrElseSafeScriptWrappedValue;
+    if (!interpreterJavascript) throw new Error('interpreter js not available');
+    (0, eval)(interpreterJavascript);
+    const botGuardClient = await BotGuardClient.create({
+      program: challenge.program,
+      globalName: challenge.globalName,
+      globalObject: globalThis,
+    });
+    const webPoSignalOutput = [];
+    const botguardResponse = await botGuardClient.snapshot({ webPoSignalOutput });
+    const itResp = await bridgeFetch(buildURL('GenerateIT', true), {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify([REQUEST_KEY, botguardResponse]),
+    });
+    const [integrityToken, estimatedTtlSecs, mintRefreshThreshold, websafeFallbackToken] =
+      await itResp.json();
+    minter = await WebPoMinter.create(
+      { integrityToken, estimatedTtlSecs, mintRefreshThreshold, websafeFallbackToken },
+      webPoSignalOutput,
+    );
+  }
+  return {
+    visitorPot: await minter.mintAsWebsafeString(visitorData),
+    contentPot: await minter.mintAsWebsafeString(videoId),
+  };
+}
+
+window.mintPots = (visitorData, videoId) => {
+  mintPots(visitorData, videoId)
+    .then(r => VibePot.onResult(r.visitorPot, r.contentPot))
+    .catch(e => VibePot.onError(String((e && e.message) || e)));
+};
+
+VibePot.onReady();
+</script>
+</body>
+</html>

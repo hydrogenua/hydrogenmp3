@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">hydrogen</string>
+    <string name="widget_description">Управление hydrogen</string>
+</resources>
