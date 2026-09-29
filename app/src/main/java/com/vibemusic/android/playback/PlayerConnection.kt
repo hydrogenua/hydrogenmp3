@@ -64,6 +64,9 @@ class PlayerConnection(context: Context) {
     /** Уведомляет UI о смене текущего трека в очереди (mediaId вида «source:id»). */
     var onMediaItemChanged: ((String) -> Unit)? = null
 
+    /** Финальная ошибка воспроизведения трека (после всех ретраев) — для фолбэка на другие источники. */
+    var onPlaybackFailed: ((Track, String) -> Unit)? = null
+
     private var controller: MediaController? = null
     private var pendingQueue: Pair<List<Track>, Int>? = null
     private val mediaIdToTrack = mutableMapOf<String, Track>()
@@ -129,8 +132,10 @@ class PlayerConnection(context: Context) {
                             }
                             return
                         }
+                        val failedTrack = mediaIdToTrack[c.currentMediaItem?.mediaId]
                         _error.value = "${error.errorCodeName}: ${error.message ?: "ошибка воспроизведения"}"
                         _isPlaying.value = false
+                        failedTrack?.let { onPlaybackFailed?.invoke(it, _error.value ?: "") }
                     }
                 })
                 pendingQueue?.let { (tracks, index) -> playQueue(tracks, index) }
@@ -226,6 +231,12 @@ class PlayerConnection(context: Context) {
     fun release() {
         scope.cancel()
         MediaController.releaseFuture(controllerFuture)
+    }
+
+    /** Показывает ошибку воспроизведения в UI (для фолбэка из VM). */
+    fun showError(message: String) {
+        _error.value = message
+        _isPlaying.value = false
     }
 
     private fun Track.toMediaItem(): MediaItem {

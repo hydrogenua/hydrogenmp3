@@ -2,6 +2,7 @@ package com.vibemusic.android.source.deezer
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.datastore.preferences.core.edit
 import com.vibemusic.android.core.model.Track
 import com.vibemusic.android.data.ARL_KEY
@@ -12,6 +13,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -35,6 +39,20 @@ class DeezerClient(private val context: Context) {
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .cookieJar(object : CookieJar {
+            // Сессия Deezer: cookie'и (sid и др.) выдаются при первом запросе
+            // и должны возвращаться в последующих — как в браузере.
+            private val store = HashMap<String, List<Cookie>>()
+
+            @Synchronized
+            override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+                store[url.host] = cookies
+            }
+
+            @Synchronized
+            override fun loadForRequest(url: HttpUrl): List<Cookie> =
+                store.flatMap { it.value }.filter { it.matches(url) }
+        })
         .build()
 
     private val gwBase = "https://www.deezer.com/ajax/gw-light.php"
@@ -73,50 +91,57 @@ class DeezerClient(private val context: Context) {
         val arl = arl()
         check(arl.isNotBlank()) { "Deezer не подключён: введи ARL в библиотеке" }
 
-        val checkForm = session(arl)
-        val song = gw(
+        val session = session(arl)
+        val songBody = gwCall(
             "song.getData",
-            checkForm,
+            session.checkForm,
             arl,
-            JSONObject().put("sng_id", track.id),
-        ).optJSONObject("results") ?: error("song.getData пуст")
+            JSONObject().put("sng_id", track.id).toString(),
+        )
+        val song = JSONObject(songBody).optJSONObject("results")
+            ?: error("song.getData пуст: ${songBody.take(200)}")
 
-        val licenseToken = song.optString("TRACK_TOKEN")
-        check(licenseToken.isNotBlank()) { "Deezer: трек недоступен для этого аккаунта" }
+        // Токен трека — по нему media-сервер находит поток.
+        val trackToken = song.optString("TRACK_TOKEN")
+        check(trackToken.isNotBlank()) {
+            "Deezer: TRACK_TOKEN пуст (FILESIZE_MP3_128=${song.opt("FILESIZE_MP3_128")})"
+        }
+        Log.d("Deezer", "TRACK_TOKEN ok: len=${trackToken.length}")
+
+        val mediaBody = JSONObject()
+            .put("license_token", session.licenseToken)
+            .put("track_tokens", org.json.JSONArray().put(trackToken))
+            .put(
+                "media",
+                org.json.JSONArray().put(
+                    JSONObject()
+                        .put("type", "FULL")
+                        .put(
+                            "formats",
+                            org.json.JSONArray()
+                                .put("MP3_128")
+                                .put("MP3_64")
+                                .put("MP3_32"),
+                        ),
+                ),
+            )
+            .toString()
+        Log.d("Deezer", "get_url body: ${mediaBody.take(200)}")
 
         val mediaReq = Request.Builder()
             .url("https://media.deezer.com/v1/get_url")
             .header("User-Agent", UA)
-            .post(
-                JSONObject()
-                    .put("license_token", licenseToken)
-                    .put(
-                        "media",
-                        org.json.JSONArray().put(
-                            JSONObject()
-                                .put("type", "FULL")
-                                .put(
-                                    "formats",
-                                    org.json.JSONArray()
-                                        .put(JSONObject().put("cipher", "BF_CBC_STRIPE").put("format", "MP3_128"))
-                                        .put(JSONObject().put("cipher", "BF_CBC_STRIPE").put("format", "MP3_64"))
-                                        .put(JSONObject().put("cipher", "BF_CBC_STRIPE").put("format", "MP3_32")),
-                                ),
-                        ),
-                    )
-                    .toString()
-                    .toRequestBody("application/json".toMediaType()),
-            )
+            .post(mediaBody.toRequestBody("application/json".toMediaType()))
             .build()
         http.newCall(mediaReq).execute().use { resp ->
             val body = resp.body?.string() ?: error("media: пустой ответ")
-            check(resp.isSuccessful) { "media: HTTP ${resp.code} — $body" }
+            check(resp.isSuccessful) { "media: HTTP ${resp.code} — ${body.take(150)}" }
             val cdnUrl = JSONObject(body)
                 .optJSONArray("data")?.optJSONObject(0)
                 ?.optJSONArray("media")?.optJSONObject(0)
                 ?.optJSONArray("sources")?.optJSONObject(0)
                 ?.optString("url")
-                .takeIf { !it.isNullOrEmpty() } ?: error("media: url не получен")
+                .takeIf { !it.isNullOrEmpty() } ?: error("media: url не получен: ${body.take(150)}")
 
             val raw = httpGetBytes(cdnUrl)
             val decrypted = stripeDecrypt(raw, track.id)
@@ -128,12 +153,23 @@ class DeezerClient(private val context: Context) {
         }
     }
 
-    private fun session(arl: String): String {
+    private data class DeezerSession(val checkForm: String, val licenseToken: String)
+
+    private fun session(arl: String): DeezerSession {
         val body = gwCall("deezer.getUserData", "", arl, "{}")
         val results = JSONObject(body).optJSONObject("results") ?: error("Deezer: нет сессии")
-        val userId = results.optJSONObject("USER")?.optLong("USER_ID", 0L) ?: 0L
-        check(userId != 0L) { "Deezer: ARL не подошёл — перекопируй cookie целиком" }
-        return results.optString("checkForm")
+        val user = results.optJSONObject("USER") ?: JSONObject()
+        Log.d(
+            "Deezer",
+            "session: USER_ID=${user.optLong("USER_ID", 0L)} country=${results.optString("COUNTRY", "?")}",
+        )
+        check(user.optLong("USER_ID", 0L) != 0L) { "Deezer: ARL не подошёл — перекопируй cookie целиком" }
+        val licenseToken = user.optJSONObject("OPTIONS")?.optString("license_token").orEmpty()
+        check(licenseToken.isNotBlank()) { "Deezer: license_token пуст в сессии" }
+        return DeezerSession(
+            checkForm = results.optString("checkForm"),
+            licenseToken = licenseToken,
+        )
     }
 
     private fun gw(method: String, apiToken: String, arl: String, payload: JSONObject): JSONObject {

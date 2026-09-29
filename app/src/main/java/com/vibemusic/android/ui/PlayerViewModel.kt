@@ -1,6 +1,7 @@
 package com.vibemusic.android.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibemusic.android.core.model.Album
@@ -133,6 +134,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Играет трек; [queueSource] — список, из которого нажали (для след./пред.). */
     fun play(track: Track, queueSource: List<Track>? = null) {
+        fallbackActive = false
+        triedSources.clear()
         viewModelScope.launch {
             if (queueSource != null) {
                 queue = queueSource
@@ -173,6 +176,44 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
             updateQueueFlags()
         }
+        // Если трек с источника не заиграл (права/сеть) — автоматически ищем
+        // ту же песню на других источниках и играем оттуда.
+        connection.onPlaybackFailed = { failed, error ->
+            triedSources.add(failed.sourceId)
+            if (failed.sourceId != "local" && !fallbackActive) {
+                fallbackActive = true
+                viewModelScope.launch {
+                    val alternative = findAlternative(failed)
+                    if (alternative != null && alternative.sourceId !in triedSources) {
+                        triedSources.add(alternative.sourceId)
+                        Log.d("Fallback", "${failed.sourceId} недоступен → играем с ${alternative.sourceId}")
+                        connection.playQueue(listOf(alternative), 0)
+                        fallbackActive = false
+                    } else {
+                        Log.d("Fallback", "альтернатив больше нет для ${failed.title}")
+                        connection.showError(error)
+                        fallbackActive = false
+                    }
+                }
+            } else {
+                connection.showError(error)
+                fallbackActive = false
+            }
+        }
+    }
+
+    /** Ищет тот же трек на других источниках (для кросс-source фолбэка). */
+    private suspend fun findAlternative(failed: Track): Track? {
+        val query = "${failed.artist} ${failed.title}"
+        for (plugin in registry.all) {
+            if (plugin.id == failed.sourceId || plugin.id == "local") continue
+            val results = runCatching { plugin.search(query, 5) }.getOrDefault(emptyList())
+            val match = results.firstOrNull { candidate ->
+                candidate.title.contains(failed.title.take(15), ignoreCase = true)
+            }
+            if (match != null) return match
+        }
+        return null
     }
 
     /** Последние прослушанные треки. */
@@ -213,6 +254,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val albumUi: StateFlow<AlbumUi?> = _albumUi.asStateFlow()
 
     private var searchJob: Job? = null
+
+    /** Флаг активного фолбэка: пока ищем замену на другом источнике — не зацикливаемся. */
+    private var fallbackActive = false
+
+    /** Источники, которые уже пытались играть текущий трек. */
+    private val triedSources = mutableSetOf<String>()
 
     fun loadHome() {
         viewModelScope.launch {
