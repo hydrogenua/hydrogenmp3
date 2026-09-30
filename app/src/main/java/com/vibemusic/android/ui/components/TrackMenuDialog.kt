@@ -88,6 +88,10 @@ fun TrackMenuDialog(
                 }
                 playlistId != null -> Column {
                     TextButton(onClick = {
+                        viewModel.startRadio(track)
+                        onDismiss()
+                    }) { Text("Запустить радио от трека") }
+                    TextButton(onClick = {
                         viewModel.removeFromPlaylist(playlistId, track)
                         onDismiss()
                     }) { Text("Убрать из плейлиста") }
@@ -103,6 +107,10 @@ fun TrackMenuDialog(
                     }
                 }
                 else -> Column {
+                    TextButton(onClick = {
+                        viewModel.startRadio(track)
+                        onDismiss()
+                    }) { Text("Запустить радио от трека") }
                     TextButton(onClick = {
                         viewModel.toggleFavorite(track)
                         onDismiss()

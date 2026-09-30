@@ -47,6 +47,7 @@ import com.vibemusic.android.core.startupPermissions
 import com.vibemusic.android.ui.PlayerViewModel
 import com.vibemusic.android.ui.components.Artwork
 import com.vibemusic.android.ui.components.TrackRow
+import com.vibemusic.android.ui.theme.Accent
 
 @Composable
 fun HomeScreen(
@@ -116,6 +117,22 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp),
                 ) {
+                    item(key = "radio_likes") {
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Accent)
+                                .clickable { viewModel.startRadio(null) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        ) {
+                            Text(
+                                "Радио по лайкам",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color(0xFF12141A),
+                                maxLines = 1,
+                            )
+                        }
+                    }
                     items(discover.moods.take(14), key = { it.params }) { mood ->
                         Box(
                             Modifier

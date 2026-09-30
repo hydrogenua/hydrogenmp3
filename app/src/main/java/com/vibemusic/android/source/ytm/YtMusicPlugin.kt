@@ -77,6 +77,10 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
     suspend fun newReleases(limit: Int = 12): List<Album> =
         withContext(Dispatchers.IO) { parseBrowseAlbums(client.browse(BROWSE_NEW_RELEASES), limit) }
 
+    /** Радио вокруг трека: сид идёт первым, дальше похожие (состоят в RDAMVM-очереди). */
+    suspend fun radioTracks(seedVideoId: String, limit: Int = 50): List<Track> =
+        withContext(Dispatchers.IO) { parseAlbumTracks(client.radio(seedVideoId), limit) }
+
     /** Треки карточки-плейлиста (RDCLAK5uy…/OLAK5uy… + params из play-кнопки карточки). */
     suspend fun playlistTracks(playlistId: String, params: String?, limit: Int = 50): List<Track> =
         withContext(Dispatchers.IO) { parseAlbumTracks(client.playlistNext(playlistId, params), limit) }

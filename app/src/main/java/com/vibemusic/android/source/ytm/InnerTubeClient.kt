@@ -91,6 +91,23 @@ class InnerTubeClient {
         return execute(request)
     }
 
+    /** Радио вокруг трека: очередь «похожего» из YT Music (RDAMVM-плейлист сида). */
+    fun radio(seedVideoId: String): JSONObject {
+        val payload = JSONObject()
+            .put("videoId", seedVideoId)
+            .put("playlistId", "RDAMVM$seedVideoId")
+            .put("context", clientContext(WEB_REMIX, WEB_REMIX_VERSION, null, null))
+        val request = Request.Builder()
+            .url("$BASE/next?prettyPrint=false")
+            .header("User-Agent", DESKTOP_UA)
+            .header("X-YouTube-Client-Name", "67")
+            .header("X-YouTube-Client-Version", WEB_REMIX_VERSION)
+            .header("Origin", "https://music.youtube.com")
+            .post(payload.toString().toRequestBody(jsonMedia))
+            .build()
+        return execute(request)
+    }
+
     /** browse-страница (настроения, хит-парады, новинки, альбом MPREb_…). */
     fun browse(browseId: String, params: String? = null): JSONObject {
         val payload = JSONObject()

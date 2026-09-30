@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -305,6 +306,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val tracks = runCatching {
                 (registry.byId("ytm") as? YtMusicPlugin)?.albumTracks(album.id) ?: emptyList()
             }.onFailure { Log.e("AlbumLoad", "album ${album.id}", it) }.getOrElse { emptyList() }
+                // У альбомных строк YT Music byline пустой и нет обложек —
+                // добираем артиста из подзаголовка альбома и его обложку.
+                .map { t ->
+                    t.copy(
+                        artist = t.artist.takeIf { it != "Неизвестный исполнитель" }
+                            ?: album.subtitle.substringAfter("• ").trim().ifBlank { album.subtitle },
+                        artworkUri = t.artworkUri ?: album.artworkUri,
+                    )
+                }
             // Перезаписываем только если пользователь всё ещё на этом альбоме.
             if (_albumUi.value?.album?.id == album.id) {
                 _albumUi.value = AlbumUi(album, tracks, loading = false)
@@ -380,6 +390,37 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 (registry.byId("ytm") as? YtMusicPlugin)?.playlistTracks(card.playlistId, card.playParams) ?: emptyList()
             }.getOrElse { emptyList() }
             if (tracks.isNotEmpty()) play(tracks.first(), tracks)
+        }
+    }
+
+    /**
+     * Радио: очередь «похожего» вокруг сида. Сид — переданный трек (для не-YT
+     * ищем аналог в YT Music по названию), иначе случайный лайк, иначе текущий
+     * трек, иначе случайный трек из трендов — радио работает всегда.
+     */
+    fun startRadio(seed: Track?) {
+        viewModelScope.launch {
+            val ytm = registry.byId("ytm") as? YtMusicPlugin ?: return@launch
+            var seedTrack: Track? = seed
+            if (seedTrack != null && seedTrack.sourceId != "ytm") {
+                seedTrack = runCatching { ytm.search("${seedTrack.title} ${seedTrack.artist}", 1) }
+                    .getOrNull()?.firstOrNull()
+            }
+            if (seedTrack == null) {
+                seedTrack = favoriteTracks.first().filter { it.sourceId == "ytm" }.randomOrNull()
+                    ?: nowPlaying.value?.takeIf { it.sourceId == "ytm" }
+            }
+            if (seedTrack == null) {
+                // Совсем пусто — сид из сегодняшних трендов.
+                seedTrack = runCatching {
+                    val card = ytm.chartPlaylists().firstOrNull() ?: return@runCatching null
+                    ytm.playlistTracks(card.playlistId, card.playParams).randomOrNull()
+                }.getOrNull()
+            }
+            val seedFinal = seedTrack ?: return@launch
+            val radio = runCatching { ytm.radioTracks(seedFinal.id) }.getOrElse { emptyList() }
+            val queue = listOf(seedFinal) + radio.filter { it.id != seedFinal.id }
+            play(seedFinal, queue)
         }
     }
 
