@@ -89,9 +89,11 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
             .offset { IntOffset(0, dragOffset.value.roundToInt()) }
             .graphicsLayer { alpha = 1f - (dragOffset.value / 1400f).coerceIn(0f, 0.55f) }
+            // Фон ПОСЛЕ offset/graphicsLayer: иначе он рисуется до сдвига и
+            // остаётся висеть на весь экран, пока контент уезжает — та самая «чернота».
+            .background(MaterialTheme.colorScheme.background)
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
                     onVerticalDrag = { change, dragAmount ->
