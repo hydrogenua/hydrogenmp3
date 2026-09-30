@@ -304,7 +304,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val tracks = runCatching {
                 (registry.byId("ytm") as? YtMusicPlugin)?.albumTracks(album.id) ?: emptyList()
-            }.getOrElse { emptyList() }
+            }.onFailure { Log.e("AlbumLoad", "album ${album.id}", it) }.getOrElse { emptyList() }
             // Перезаписываем только если пользователь всё ещё на этом альбоме.
             if (_albumUi.value?.album?.id == album.id) {
                 _albumUi.value = AlbumUi(album, tracks, loading = false)
@@ -314,12 +314,73 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun openAlbumById(albumId: String) {
         val known = _searchAlbums.value.firstOrNull { it.id == albumId }
+            ?: _discover.value.releases.firstOrNull { it.id == albumId }
         openAlbum(known ?: Album(albumId, "Альбом", "", null))
     }
 
     fun playAlbum() {
         val ui = _albumUi.value
         if (ui != null && ui.tracks.isNotEmpty()) play(ui.tracks.first(), ui.tracks)
+    }
+
+    // ---------- Обзор на Главной: настроения, хит-парады, новинки ----------
+
+    /** Витрина «обзора»: грузится один раз параллельно, секции скрываются если пусто. */
+    data class Discover(
+        val moods: List<com.vibemusic.android.source.ytm.MoodCard> = emptyList(),
+        val charts: List<com.vibemusic.android.source.ytm.PlaylistCard> = emptyList(),
+        val releases: List<Album> = emptyList(),
+    )
+
+    private val _discover = MutableStateFlow(Discover())
+    val discover: StateFlow<Discover> = _discover.asStateFlow()
+
+    private var discoverLoaded = false
+
+    fun loadDiscover() {
+        if (discoverLoaded) return
+        discoverLoaded = true
+        val ytm = registry.byId("ytm") as? YtMusicPlugin ?: return
+        viewModelScope.launch {
+            val moods = async { runCatching { ytm.moods() }.getOrElse { emptyList() } }
+            val charts = async { runCatching { ytm.chartPlaylists() }.getOrElse { emptyList() } }
+            val releases = async { runCatching { ytm.newReleases() }.getOrElse { emptyList() } }
+            _discover.value = Discover(moods.await(), charts.await(), releases.await())
+        }
+    }
+
+    /** Экран настроения: плейлисты выбранной категории. */
+    data class MoodUi(
+        val title: String,
+        val params: String,
+        val cards: List<com.vibemusic.android.source.ytm.PlaylistCard> = emptyList(),
+        val loading: Boolean = true,
+    )
+
+    private val _moodUi = MutableStateFlow<MoodUi?>(null)
+    val moodUi: StateFlow<MoodUi?> = _moodUi.asStateFlow()
+
+    fun openMood(params: String, title: String) {
+        _moodUi.value = MoodUi(title, params, loading = true)
+        viewModelScope.launch {
+            val cards = runCatching {
+                (registry.byId("ytm") as? YtMusicPlugin)?.moodPlaylists(params) ?: emptyList()
+            }.getOrElse { emptyList() }
+            // Показываем только если пользователь ещё на этом настроении.
+            if (_moodUi.value?.params == params) {
+                _moodUi.value = MoodUi(title, params, cards, loading = false)
+            }
+        }
+    }
+
+    /** Играет карточку плейлиста (настроение или хит-парад) очередью. */
+    fun playPlaylistCard(card: com.vibemusic.android.source.ytm.PlaylistCard) {
+        viewModelScope.launch {
+            val tracks = runCatching {
+                (registry.byId("ytm") as? YtMusicPlugin)?.playlistTracks(card.playlistId, card.playParams) ?: emptyList()
+            }.getOrElse { emptyList() }
+            if (tracks.isNotEmpty()) play(tracks.first(), tracks)
+        }
     }
 
     fun playNext() = connection.nextMedia()

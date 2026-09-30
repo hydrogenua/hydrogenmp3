@@ -4,8 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material3.Button
@@ -33,9 +34,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.vibemusic.android.core.model.Album
 import com.vibemusic.android.core.model.Track
 import com.vibemusic.android.core.audioPermissions
 import com.vibemusic.android.core.hasAudioPermission
@@ -49,6 +53,8 @@ fun HomeScreen(
     viewModel: PlayerViewModel,
     onLongPressTrack: (Track) -> Unit,
     onOpenPlaylist: (Long, String) -> Unit,
+    onOpenAlbum: (Album) -> Unit,
+    onOpenMood: (params: String, title: String) -> Unit,
 ) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasAudioPermission(context)) }
@@ -71,6 +77,10 @@ fun HomeScreen(
     val favorites by viewModel.favoriteTracks.collectAsState(initial = emptyList())
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
     val downloads by viewModel.downloadedTracks.collectAsState(initial = emptyList())
+
+    // Обзор с YT Music: настроения, хит-парады, новинки.
+    val discover by viewModel.discover.collectAsState()
+    LaunchedEffect(Unit) { viewModel.loadDiscover() }
 
     val recent = history.distinctBy { it.sourceId + it.id }.take(12)
     val favCards = favorites.take(12)
@@ -98,6 +108,69 @@ fun HomeScreen(
         if (recent.isNotEmpty()) {
             item(key = "recent_h") { SectionTitle("Недавно игравшие") }
             item(key = "recent_r") { TrackStrip(recent, viewModel, onLongPressTrack) }
+        }
+        if (discover.moods.isNotEmpty()) {
+            item(key = "moods_h") { SectionTitle("По настроению") }
+            item(key = "moods_r") {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                ) {
+                    items(discover.moods.take(14), key = { it.params }) { mood ->
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color(mood.color))
+                                .clickable { onOpenMood(mood.params, mood.title) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        ) {
+                            Text(
+                                mood.title,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color(0xFF12141A),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (discover.charts.isNotEmpty()) {
+            item(key = "charts_h") { SectionTitle("Сегодняшние хиты") }
+            item(key = "charts_r") { PlaylistCardStrip(discover.charts, viewModel) }
+        }
+        if (discover.releases.isNotEmpty()) {
+            item(key = "rel_h") { SectionTitle("Свежие релизы") }
+            item(key = "rel_r") {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                ) {
+                    items(discover.releases, key = { it.id }) { album ->
+                        Column(
+                            Modifier
+                                .width(140.dp)
+                                .clickable { onOpenAlbum(album) },
+                        ) {
+                            Artwork(uri = album.artworkUri, size = 140.dp)
+                            Text(
+                                album.title,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                            Text(
+                                album.subtitle,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
         }
         if (favCards.isNotEmpty()) {
             item(key = "fav_h") { SectionTitle("Избранное") }
@@ -179,6 +252,38 @@ fun HomeScreen(
         } else {
             items(localTracks, key = { "local_" + it.sourceId + it.id }) { track ->
                 TrackRow(track, onClick = { viewModel.play(track, localTracks) }, onLongClick = { onLongPressTrack(track) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistCardStrip(cards: List<com.vibemusic.android.source.ytm.PlaylistCard>, viewModel: PlayerViewModel) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+    ) {
+        items(cards, key = { it.playlistId }) { card ->
+            Column(
+                Modifier
+                    .width(140.dp)
+                    .clickable { viewModel.playPlaylistCard(card) },
+            ) {
+                Artwork(uri = card.artworkUri, size = 140.dp)
+                Text(
+                    card.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+                Text(
+                    card.subtitle.ifBlank { "Плейлист" },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

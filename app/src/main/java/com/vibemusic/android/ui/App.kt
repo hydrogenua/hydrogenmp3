@@ -62,6 +62,7 @@ import com.vibemusic.android.ui.components.Artwork
 import com.vibemusic.android.ui.components.TrackMenuDialog
 import com.vibemusic.android.ui.theme.Accent
 import com.vibemusic.android.ui.home.HomeScreen
+import com.vibemusic.android.ui.home.MoodScreen
 import com.vibemusic.android.ui.library.LibraryScreen
 import com.vibemusic.android.ui.library.PlaylistDetailScreen
 import com.vibemusic.android.ui.player.NowPlayingScreen
@@ -110,6 +111,26 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                         onOpenPlaylist = { id, name ->
                             navController.navigate("playlist/$id/${Uri.encode(name)}")
                         },
+                        onOpenAlbum = { album ->
+                            navController.navigate("album/${Uri.encode(album.id)}")
+                        },
+                        onOpenMood = { params, title ->
+                            navController.navigate("mood/${Uri.encode(params)}/${Uri.encode(title)}")
+                        },
+                    )
+                }
+                composable(
+                    route = "mood/{params}/{title}",
+                    arguments = listOf(
+                        navArgument("params") { type = NavType.StringType },
+                        navArgument("title") { type = NavType.StringType },
+                    ),
+                ) { entry ->
+                    MoodScreen(
+                        params = entry.arguments?.getString("params").orEmpty(),
+                        title = entry.arguments?.getString("title").orEmpty(),
+                        viewModel = viewModel,
+                        onBack = { navController.popBackStack() },
                     )
                 }
                 composable(Routes.Search) {

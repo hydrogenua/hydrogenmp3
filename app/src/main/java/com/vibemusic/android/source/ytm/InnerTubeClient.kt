@@ -68,10 +68,18 @@ class InnerTubeClient {
     }
 
     /** Трек-лист альбома/плейлиста через next-эндпоинт (очередь watch-страницы). */
-    fun albumNext(playlistId: String): JSONObject {
+    fun albumNext(playlistId: String): JSONObject = playlistNext(playlistId, null)
+
+    /**
+     * Очередь плейлиста для /next. Плейлист обязан быть в «play»-формате (RDCLAK5uy…/OLAK5uy…,
+     * как в watchPlaylistEndpoint карточек) — browse-формат с префиксом VL… отдаёт пустую очередь.
+     * params из карточки задаёт старт/шафл; без него плейлист играет с начала.
+     */
+    fun playlistNext(playlistId: String, params: String?): JSONObject {
         val payload = JSONObject()
             .put("playlistId", playlistId)
             .put("context", clientContext(WEB_REMIX, WEB_REMIX_VERSION, null, null))
+        if (params != null) payload.put("params", params)
         val request = Request.Builder()
             .url("$BASE/next?prettyPrint=false")
             .header("User-Agent", DESKTOP_UA)
@@ -81,6 +89,27 @@ class InnerTubeClient {
             .post(payload.toString().toRequestBody(jsonMedia))
             .build()
         return execute(request)
+    }
+
+    /** browse-страница (настроения, хит-парады, новинки, альбом MPREb_…). */
+    fun browse(browseId: String, params: String? = null): JSONObject {
+        val payload = JSONObject()
+            .put("browseId", browseId)
+            .put("context", clientContext(WEB_REMIX, WEB_REMIX_VERSION, null, null))
+        if (params != null) payload.put("params", params)
+        val request = Request.Builder()
+            .url("$BASE/browse?prettyPrint=false")
+            .header("User-Agent", DESKTOP_UA)
+            .header("X-YouTube-Client-Name", "67")
+            .header("X-YouTube-Client-Version", WEB_REMIX_VERSION)
+            .header("Origin", "https://music.youtube.com")
+            .post(payload.toString().toRequestBody(jsonMedia))
+            .build()
+        val response = execute(request)
+        response.optJSONObject("responseContext")?.optString("visitorData")?.takeIf { it.isNotEmpty() }?.let {
+            visitorData = it
+        }
+        return response
     }
 
     /** player-эндпоинт: перебирает клиентов из цепочки, возвращает первый ответ с потоками. */
@@ -160,7 +189,8 @@ class InnerTubeClient {
         val client = JSONObject()
             .put("clientName", clientName)
             .put("clientVersion", clientVersion)
-            .put("hl", "en")
+            // Русская локализация: имена настроений/жанров на Главной и в поиске.
+            .put("hl", "ru")
             .put("gl", "US")
         if (androidSdkVersion != null) client.put("androidSdkVersion", androidSdkVersion)
         if (visitorData != null) client.put("visitorData", visitorData)

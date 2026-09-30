@@ -53,9 +53,33 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
     suspend fun searchAlbums(query: String, limit: Int = 12): List<Album> =
         withContext(Dispatchers.IO) { parseAlbums(client.search(query, InnerTubeClient.SEARCH_ALBUMS_PARAMS), limit) }
 
-    /** Трек-лист альбома по его playlistId (OLAK5uy_...). */
+    /** Трек-лист альбома по его playlistId (OLAK5uy_...) или browseId альбома (MPREb_...). */
     suspend fun albumTracks(playlistId: String, limit: Int = 50): List<Track> =
-        withContext(Dispatchers.IO) { parseAlbumTracks(client.albumNext(playlistId), limit) }
+        withContext(Dispatchers.IO) {
+            if (playlistId.startsWith("MPREb")) parseBrowseAlbumTracks(client.browse(playlistId), limit)
+            else parseAlbumTracks(client.albumNext(playlistId), limit)
+        }
+
+    // ---------- Обзор: настроения, хит-парады, новинки ----------
+
+    suspend fun moods(): List<MoodCard> =
+        withContext(Dispatchers.IO) { parseMoods(client.browse(BROWSE_MOODS)) }
+
+    /** Плейлисты категории настроения (params — из чипа moods()). */
+    suspend fun moodPlaylists(params: String): List<PlaylistCard> =
+        withContext(Dispatchers.IO) { parsePlaylistCards(client.browse(BROWSE_MOODS_CATEGORY, params)) }
+
+    /** Хит-парады: карточки «Хит-парады видео» (тренды/топы дня). */
+    suspend fun chartPlaylists(): List<PlaylistCard> =
+        withContext(Dispatchers.IO) { parsePlaylistCards(client.browse(BROWSE_CHARTS)) }
+
+    /** Свежие релизы: альбомы MPREb_… (смешанные «Микс»-карточки отфильтрованы). */
+    suspend fun newReleases(limit: Int = 12): List<Album> =
+        withContext(Dispatchers.IO) { parseBrowseAlbums(client.browse(BROWSE_NEW_RELEASES), limit) }
+
+    /** Треки карточки-плейлиста (RDCLAK5uy…/OLAK5uy… + params из play-кнопки карточки). */
+    suspend fun playlistTracks(playlistId: String, params: String?, limit: Int = 50): List<Track> =
+        withContext(Dispatchers.IO) { parseAlbumTracks(client.playlistNext(playlistId, params), limit) }
 
     override suspend fun resolvePlayable(track: Track): ResolvedStream? = withContext(Dispatchers.IO) {
         // Путь 1: PoToken из WebView-BotGuard — рабочий путь для VPN/флагованных IP.
@@ -215,6 +239,151 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
         return tracks
     }
 
+    /** Парсит чипы настроений: подпись, endpoint категории, фирменный цвет. */
+    internal fun parseMoods(response: JSONObject): List<MoodCard> {
+        val cards = mutableListOf<MoodCard>()
+        val seen = mutableSetOf<String>()
+        walkRenderers(response, "musicNavigationButtonRenderer") { btn ->
+            val title = btn.optJSONObject("buttonText")?.let { text ->
+                when (val runs = text.optJSONArray("runs")) {
+                    null -> text.optString("simpleText")
+                    else -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() }
+                }
+            }.orEmpty()
+            val params = btn.optJSONObject("clickCommand")
+                ?.optJSONObject("browseEndpoint")?.optString("params").orEmpty()
+            if (title.isEmpty() || params.isEmpty() || !seen.add(params)) return@walkRenderers
+            val color = btn.optJSONObject("solid")?.optLong("leftStripeColor") ?: 0L
+            cards += MoodCard(title, params, color)
+        }
+        return cards
+    }
+
+    /** Карточки плейлистов (настроения, хит-парады): обложка + play-endpoint с RD…/OLAK5uy… и params. */
+    internal fun parsePlaylistCards(response: JSONObject): List<PlaylistCard> {
+        val cards = mutableListOf<PlaylistCard>()
+        val seen = mutableSetOf<String>()
+        walkRenderers(response, "musicTwoRowItemRenderer") { r ->
+            val title = r.optJSONObject("title")?.optJSONArray("runs")
+                ?.let { runs -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() } }
+                .orEmpty()
+            val subtitle = r.optJSONObject("subtitle")?.optJSONArray("runs")
+                ?.let { runs -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() } }
+                .orEmpty()
+            var playlistId = ""
+            var playParams: String? = null
+            walkRenderers(r, "watchPlaylistEndpoint") { ep ->
+                val pid = ep.optString("playlistId")
+                if (playlistId.isEmpty() && (pid.startsWith("RD") || pid.startsWith("OLAK5uy"))) {
+                    playlistId = pid
+                    playParams = ep.optString("params").takeIf { it.isNotEmpty() }
+                }
+            }
+            if (title.isEmpty() || playlistId.isEmpty() || !seen.add(playlistId)) return@walkRenderers
+            val thumb = r.optJSONObject("thumbnailRenderer")
+                ?.optJSONObject("musicThumbnailRenderer")
+                ?.optJSONObject("thumbnail")
+                ?.optJSONArray("thumbnails")
+                ?.let { thumbs -> (0 until thumbs.length()).maxOfOrNull { thumbs.optJSONObject(it)?.optString("url").orEmpty() }.orEmpty() }
+                .orEmpty()
+            cards += PlaylistCard(title, subtitle, playlistId, playParams, thumb.takeIf { it.isNotEmpty() })
+        }
+        return cards
+    }
+
+    /** Альбомы со страницы новинок: двухрядные карточки с browseId MPREb_…. */
+    internal fun parseBrowseAlbums(response: JSONObject, limit: Int): List<Album> {
+        val albums = mutableListOf<Album>()
+        walkRenderers(response, "musicTwoRowItemRenderer") { r ->
+            if (albums.size >= limit) return@walkRenderers
+            val id = r.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
+            if (!id.startsWith("MPREb")) return@walkRenderers
+            val title = r.optJSONObject("title")?.optJSONArray("runs")
+                ?.let { runs -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() } }
+                .orEmpty()
+            if (title.isEmpty()) return@walkRenderers
+            val subtitle = r.optJSONObject("subtitle")?.optJSONArray("runs")
+                ?.let { runs -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() } }
+                .orEmpty()
+            // У двухрядных карточек новинок обложка лежит в thumbnailRenderer (в поиске — в thumbnail).
+            val thumb = r.optJSONObject("thumbnailRenderer")
+                ?.optJSONObject("musicThumbnailRenderer")
+                ?.optJSONObject("thumbnail")
+                ?.optJSONArray("thumbnails")
+                ?.let { thumbs -> (0 until thumbs.length()).maxOfOrNull { thumbs.optJSONObject(it)?.optString("url").orEmpty() }.orEmpty() }
+                .orEmpty()
+            albums += Album(
+                id = id,
+                title = title,
+                subtitle = subtitle,
+                artworkUri = thumb.takeIf { it.isNotEmpty() }?.let { u ->
+                    val eq = u.indexOf('=')
+                    if (eq > 0) u.substring(0, eq) + ARTWORK_SIZE_SUFFIX else u
+                },
+            )
+        }
+        return albums
+    }
+
+    /**
+     * Трек-лист страницы альбома (MPREb_…). Полка бывает разных типов
+     * (musicPlaylistShelfRenderer / musicShelfRenderer), поэтому собираем
+     * трек-строки musicResponsiveListItemRenderer со всей страницы.
+     */
+    internal fun parseBrowseAlbumTracks(response: JSONObject, limit: Int): List<Track> {
+        val rows = mutableListOf<JSONObject>()
+        walkRenderers(response, "musicResponsiveListItemRenderer") { r -> rows += r }
+        val tracks = mutableListOf<Track>()
+        for (r in rows) {
+            if (tracks.size >= limit) break
+            val videoId = r.optJSONObject("playlistItemData")?.optString("videoId")?.takeIf { it.isNotEmpty() }
+                ?: r.optJSONObject("overlay")
+                    ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                    ?.optJSONObject("content")
+                    ?.optJSONObject("musicPlayButtonRenderer")
+                    ?.optJSONObject("playNavigationEndpoint")
+                    ?.optJSONObject("watchEndpoint")
+                    ?.optString("videoId")
+                    ?.takeIf { it.isNotEmpty() }
+                ?: continue
+            val columns = r.optJSONArray("flexColumns") ?: continue
+            val title = columnText(columns.optJSONObject(0))
+            if (videoId.isEmpty() || title.isEmpty()) continue
+            val byline = columnText(columns.optJSONObject(1))
+            val durationText = r.optJSONArray("fixedColumns")?.let { cols ->
+                (0 until cols.length()).firstNotNullOfOrNull { k ->
+                    cols.optJSONObject(k)?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
+                        ?.optJSONObject("text")
+                        ?.optJSONArray("runs")
+                        ?.let { runs -> (0 until runs.length()).joinToString("") { j -> runs.optJSONObject(j)?.optString("text").orEmpty() } }
+                }
+            }.orEmpty()
+            val durationMs = (durationText.ifBlank { byline.split(" • ").lastOrNull().orEmpty() })
+                .takeIf { DURATION_REGEX.matches(it) }?.let(::parseDuration) ?: 0L
+            val thumb = r.optJSONObject("thumbnail")
+                ?.optJSONObject("musicThumbnailRenderer")
+                ?.optJSONObject("thumbnail")
+                ?.optJSONArray("thumbnails")
+                ?.let { thumbs -> (0 until thumbs.length()).maxOfOrNull { thumbs.optJSONObject(it)?.optString("url").orEmpty() }.orEmpty() }
+                .orEmpty()
+            tracks += Track(
+                id = videoId,
+                sourceId = id,
+                title = title,
+                artist = byline.substringBefore(" • ").ifBlank { "Неизвестный исполнитель" },
+                durationMs = durationMs,
+                artworkUri = thumb.takeIf { it.isNotEmpty() }?.let { u ->
+                    val eq = u.indexOf('=')
+                    if (eq > 0) u.substring(0, eq) + ARTWORK_SIZE_SUFFIX else u
+                },
+                quality = Quality.LOSSY,
+                shareUrl = "https://music.youtube.com/watch?v=$videoId",
+            )
+        }
+        return tracks
+    }
+
     internal fun parseSearch(response: JSONObject, limit: Int): List<Track> {
         val sections = response.optJSONObject("contents")
             ?.optJSONObject("tabbedSearchResultsRenderer")
@@ -315,9 +484,41 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
         return seconds * 1000
     }
 
+    /** Рекурсивно обходит JSON и вызывает fn на каждом объекте-рендерере с данным именем. */
+    private fun walkRenderers(json: JSONObject, key: String, fn: (JSONObject) -> Unit) {
+        val stack = ArrayDeque<Any?>()
+        stack.add(json)
+        while (stack.isNotEmpty()) {
+            when (val node = stack.removeFirst()) {
+                is JSONObject -> {
+                    node.optJSONObject(key)?.let(fn)
+                    node.keys().forEachRemaining { k -> stack.addLast(node.opt(k)) }
+                }
+                is org.json.JSONArray -> for (i in 0 until node.length()) stack.addLast(node.opt(i))
+            }
+        }
+    }
+
     private companion object {
         const val TAG = "VibeYtm"
         val DURATION_REGEX = Regex("""^\d{1,2}(:\d{2}){1,2}$""")
         const val ARTWORK_SIZE_SUFFIX = "=w544-h544-l90-rj"
+
+        const val BROWSE_MOODS = "FEmusic_moods_and_genres"
+        const val BROWSE_MOODS_CATEGORY = "FEmusic_moods_and_genres_category"
+        const val BROWSE_CHARTS = "FEmusic_charts"
+        const val BROWSE_NEW_RELEASES = "FEmusic_new_releases"
     }
 }
+
+/** Чип настроения на Главной: подпись, endpoint категории и фирменный цвет YouTube Music. */
+data class MoodCard(val title: String, val params: String, val color: Long)
+
+/** Карточка плейлиста (настроение / хит-парад): играет через /next по play-endpoint карточки. */
+data class PlaylistCard(
+    val title: String,
+    val subtitle: String,
+    val playlistId: String,
+    val playParams: String?,
+    val artworkUri: String?,
+)
