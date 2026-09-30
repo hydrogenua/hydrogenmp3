@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Timeline
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -69,6 +70,12 @@ class PlayerConnection(context: Context) {
 
     private var controller: MediaController? = null
     private var pendingQueue: Pair<List<Track>, Int>? = null
+
+    /** Зеркало очереди плеера для UI: треки в текущем порядке + индекс играющего. */
+    private val _queueTracks = MutableStateFlow<List<Track>>(emptyList())
+    val queueTracks: StateFlow<List<Track>> = _queueTracks.asStateFlow()
+    private val _queuePosition = MutableStateFlow(-1)
+    val queuePosition: StateFlow<Int> = _queuePosition.asStateFlow()
     private val mediaIdToTrack = mutableMapOf<String, Track>()
     private var streamRetryCount = 0
 
@@ -105,6 +112,10 @@ class PlayerConnection(context: Context) {
                         }
                         streamRetryCount = 0
                         onMediaItemChanged?.invoke(mediaId)
+                    }
+
+                    override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+                        refreshQueue()
                     }
 
                     override fun onRepeatModeChanged(repeatMode: Int) {
@@ -178,6 +189,35 @@ class PlayerConnection(context: Context) {
             c.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
             c.prepare()
             c.play()
+            refreshQueue()
+        }
+    }
+
+    /** Перечитывает очередь контроллера в UI-флоу (вызывать на изменениях таймлайна). */
+    private fun refreshQueue() {
+        val c = controller ?: return
+        _queueTracks.value = (0 until c.mediaItemCount).mapNotNull { mediaIdToTrack[c.getMediaItemAt(it).mediaId] }
+        _queuePosition.value = c.currentMediaItemIndex
+    }
+
+    /** Прыгает на трек очереди по индексу. */
+    fun playQueueIndex(index: Int) {
+        val c = controller ?: return
+        scope.launch(Dispatchers.Main) {
+            if (index in 0 until c.mediaItemCount) {
+                c.seekToDefaultPosition(index)
+                c.play()
+            }
+        }
+    }
+
+    /** Переставляет трек очереди (drag-сортировка). */
+    fun moveInQueue(from: Int, to: Int) {
+        val c = controller ?: return
+        if (from == to || from !in 0 until c.mediaItemCount || to !in 0 until c.mediaItemCount) return
+        scope.launch(Dispatchers.Main) {
+            c.moveMediaItem(from, to)
+            refreshQueue()
         }
     }
 

@@ -226,6 +226,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     val isPlaying: StateFlow<Boolean> = connection.isPlaying
     val nowPlaying: StateFlow<Track?> = connection.nowPlaying
+
+    /** Очередь плеера для экрана очереди + позиция играющего трека. */
+    val queueTracks: StateFlow<List<Track>> = connection.queueTracks
+    val queuePosition: StateFlow<Int> = connection.queuePosition
+
+    /** Drag-сортировка очереди. */
+    fun moveInQueue(from: Int, to: Int) = connection.moveInQueue(from, to)
+
+    /** Прыгнуть на трек очереди. */
+    fun playQueueIndex(index: Int) = connection.playQueueIndex(index)
     val positionMs: StateFlow<Long> = connection.positionMs
     val durationMs: StateFlow<Long> = connection.durationMs
     val repeatOne: StateFlow<Boolean> = connection.repeatOne

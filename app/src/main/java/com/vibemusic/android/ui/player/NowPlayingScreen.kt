@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -87,6 +88,8 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
 
     // Пока тащим ползунок — не даём опросу позиции дёргать значение под пальцем.
     var dragPosition by remember { mutableStateOf<Float?>(null) }
+    // Показ очереди вместо обложки/управления внутри того же плеера.
+    var showQueue by remember { mutableStateOf(false) }
 
     // Плеер тянется пальцем вниз; отпустил далеко — улетел за экран и свернулся,
     // близко — вернулся пружинкой.
@@ -128,10 +131,27 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 )
             },
     ) {
-        IconButton(onClick = onBack, modifier = Modifier.padding(8.dp)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
+            }
+            IconButton(onClick = { showQueue = !showQueue }) {
+                Icon(
+                    Icons.AutoMirrored.Filled.QueueMusic,
+                    contentDescription = "Очередь",
+                    tint = if (showQueue) Accent else MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
         Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
+            if (showQueue) {
+                QueueScreen(viewModel) { showQueue = false }
+            } else {
             val t = track
             if (t == null) {
                 Text(
@@ -291,6 +311,7 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                             .fillMaxWidth()
                             .padding(top = 20.dp),
                     )
+                }
                 }
             }
         }
