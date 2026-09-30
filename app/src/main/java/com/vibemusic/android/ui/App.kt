@@ -2,7 +2,9 @@ package com.vibemusic.android.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,16 +97,26 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
                 Column {
-                    MiniPlayer(viewModel = viewModel, onOpenPlayer = { playerExpanded = true })
+                    // Пока раскрыт большой плеер, мини-плеер прячем — вкладки остаются.
+                    if (!playerExpanded) {
+                        MiniPlayer(viewModel = viewModel, onOpenPlayer = { playerExpanded = true })
+                    }
                     VibeBottomBar(navController, currentRoute)
                 }
             },
         ) { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = Routes.Home,
-                modifier = Modifier.padding(innerPadding),
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    // Плеер улетает вниз при свайпе — обрезаем по контентной зоне,
+                    // чтобы он «уезжал за» вкладки, а не рисовался поверх.
+                    .clipToBounds(),
             ) {
+                NavHost(
+                    navController = navController,
+                    startDestination = Routes.Home,
+                ) {
                 composable(Routes.Home) {
                     HomeScreen(
                         viewModel,
@@ -180,21 +193,22 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                         onBack = { navController.popBackStack() },
                     )
                 }
-            }
-        }
+                }
 
-        androidx.compose.animation.AnimatedVisibility(
-            visible = playerExpanded,
-            enter = androidx.compose.animation.slideInVertically(
-                initialOffsetY = { it },
-                animationSpec = androidx.compose.animation.core.tween(280),
-            ),
-            exit = androidx.compose.animation.slideOutVertically(
-                targetOffsetY = { it },
-                animationSpec = androidx.compose.animation.core.tween(240),
-            ),
-        ) {
-            NowPlayingScreen(viewModel) { playerExpanded = false }
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = playerExpanded,
+                    enter = androidx.compose.animation.slideInVertically(
+                        initialOffsetY = { it },
+                        animationSpec = androidx.compose.animation.core.tween(280),
+                    ),
+                    exit = androidx.compose.animation.slideOutVertically(
+                        targetOffsetY = { it },
+                        animationSpec = androidx.compose.animation.core.tween(240),
+                    ),
+                ) {
+                    NowPlayingScreen(viewModel) { playerExpanded = false }
+                }
+            }
         }
     }
 
@@ -335,6 +349,7 @@ private fun VibeBottomBar(navController: NavHostController, currentRoute: String
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MiniPlayer(viewModel: PlayerViewModel, onOpenPlayer: () -> Unit) {
     val nowPlaying by viewModel.nowPlaying.collectAsState()
@@ -356,7 +371,7 @@ private fun MiniPlayer(viewModel: PlayerViewModel, onOpenPlayer: () -> Unit) {
                 track.title,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.basicMarquee(),
             )
             Text(
                 track.artist,

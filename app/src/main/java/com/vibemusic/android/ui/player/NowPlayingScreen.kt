@@ -5,11 +5,16 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
@@ -64,6 +70,7 @@ import com.vibemusic.android.ui.theme.Accent
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
     val track by viewModel.nowPlaying.collectAsState()
@@ -144,8 +151,8 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                         style = MaterialTheme.typography.headlineLarge,
                         color = MaterialTheme.colorScheme.onBackground,
                         textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        maxLines = 1,
+                        modifier = Modifier.basicMarquee(),
                     )
                     Text(
                         t.artist,
@@ -162,13 +169,6 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                         modifier = Modifier.padding(top = 10.dp),
                     ) {
                         QualityBadge(quality = t.quality, format = t.format)
-                        IconButton(onClick = { viewModel.toggleFavorite(t) }) {
-                            Icon(
-                                if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                contentDescription = "В избранное",
-                                tint = if (isFavorite) Accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
 
                     error?.let { message ->
@@ -184,7 +184,7 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                     val totalMs = if (durationMs > 0) durationMs else t.durationMs
                     val currentMs = positionMs.coerceIn(0L, if (totalMs > 0) totalMs else 0L)
                     if (totalMs > 0) {
-                        Slider(
+                        SlimSlider(
                             value = dragPosition ?: currentMs.toFloat(),
                             onValueChange = { dragPosition = it },
                             onValueChangeFinished = {
@@ -212,77 +212,84 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
 
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 22.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 18.dp),
                     ) {
-                        IconButton(onClick = viewModel::toggleShuffle) {
-                            Icon(
-                                Icons.Filled.Shuffle,
-                                contentDescription = "Перемешать",
-                                tint = if (isShuffle) Accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            IconButton(onClick = viewModel::toggleShuffle) {
+                                Icon(
+                                    Icons.Filled.Shuffle,
+                                    contentDescription = "Перемешать",
+                                    tint = if (isShuffle) Accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
                         }
-                        Spacer(Modifier.width(12.dp))
-                        IconButton(onClick = viewModel::toggleRepeat) {
-                            Icon(
-                                if (repeatOne) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                                contentDescription = "Повтор",
-                                tint = if (repeatOne) Accent else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            IconButton(onClick = viewModel::playPrevious, enabled = canPrevious) {
+                                Icon(
+                                    Icons.Filled.SkipPrevious,
+                                    contentDescription = "Предыдущий трек",
+                                    tint = if (canPrevious) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    },
+                                    modifier = Modifier.size(32.dp),
+                                )
+                            }
                         }
-                        Spacer(Modifier.width(12.dp))
-                        IconButton(onClick = viewModel::playPrevious, enabled = canPrevious) {
-                            Icon(
-                                Icons.Filled.SkipPrevious,
-                                contentDescription = "Предыдущий трек",
-                                tint = if (canPrevious) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                },
-                            )
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            IconButton(
+                                onClick = viewModel::togglePlayback,
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .background(Accent, CircleShape),
+                            ) {
+                                Icon(
+                                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = null,
+                                    tint = Color.Black,
+                                    modifier = Modifier.size(36.dp),
+                                )
+                            }
                         }
-                        Spacer(Modifier.width(12.dp))
-                        IconButton(
-                            onClick = viewModel::togglePlayback,
-                            modifier = Modifier
-                                .size(76.dp)
-                                .background(Accent, CircleShape),
-                        ) {
-                            Icon(
-                                if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                contentDescription = null,
-                                tint = Color.Black,
-                                modifier = Modifier.size(42.dp),
-                            )
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            IconButton(onClick = viewModel::playNext, enabled = canNext) {
+                                Icon(
+                                    Icons.Filled.SkipNext,
+                                    contentDescription = "Следующий трек",
+                                    tint = if (canNext) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    },
+                                    modifier = Modifier.size(32.dp),
+                                )
+                            }
                         }
-                        Spacer(Modifier.width(12.dp))
-                        IconButton(onClick = viewModel::playNext, enabled = canNext) {
-                            Icon(
-                                Icons.Filled.SkipNext,
-                                contentDescription = "Следующий трек",
-                                tint = if (canNext) {
-                                    MaterialTheme.colorScheme.onSurface
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                                },
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        IconButton(onClick = { shareTrack(context, t) }) {
-                            Icon(
-                                Icons.Filled.Share,
-                                contentDescription = "Поделиться",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            IconButton(onClick = { viewModel.toggleFavorite(t) }) {
+                                Icon(
+                                    if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    contentDescription = "В избранное",
+                                    tint = if (isFavorite) Accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
                         }
                     }
 
                     VolumeSlider(
                         volume = volume,
                         onVolumeChange = viewModel::setVolume,
+                        repeatOne = repeatOne,
+                        onToggleRepeat = viewModel::toggleRepeat,
+                        onShare = { shareTrack(context, t) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 26.dp),
+                            .padding(top = 20.dp),
                     )
                 }
             }
@@ -290,26 +297,115 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
     }
 }
 
-/** Громкость применяется сразу при перетаскивании, а не только после отпускания. */
+/** Громкость: тонкий слайдер, справа — повтор и «поделиться» мелкими иконками. */
 @Composable
-private fun VolumeSlider(volume: Float, onVolumeChange: (Float) -> Unit, modifier: Modifier = Modifier) {
+private fun VolumeSlider(
+    volume: Float,
+    onVolumeChange: (Float) -> Unit,
+    repeatOne: Boolean,
+    onToggleRepeat: () -> Unit,
+    onShare: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var dragVolume by remember { mutableStateOf<Float?>(null) }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
         Icon(
             Icons.AutoMirrored.Filled.VolumeUp,
             contentDescription = "Громкость",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
         )
-        Slider(
+        SlimSlider(
             value = dragVolume ?: volume,
             onValueChange = {
                 dragVolume = it
                 onVolumeChange(it)
             },
             onValueChangeFinished = { dragVolume = null },
+            valueRange = 0f..1f,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 8.dp),
+                .padding(start = 10.dp),
+        )
+        IconButton(onClick = onToggleRepeat, modifier = Modifier.size(36.dp)) {
+            Icon(
+                if (repeatOne) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                contentDescription = "Повтор",
+                tint = if (repeatOne) Accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        IconButton(onClick = onShare, modifier = Modifier.size(36.dp)) {
+            Icon(
+                Icons.Filled.Share,
+                contentDescription = "Поделиться",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+/** Тонкий слайдер: полоса 3dp, бегунок 10dp, зона касания 28dp. Контракт как у M3 Slider. */
+@Composable
+private fun SlimSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: (() -> Unit)?,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier.height(28.dp)) {
+        val widthPx = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+        val span = valueRange.endInclusive - valueRange.start
+        val frac = ((value - valueRange.start) / span).coerceIn(0f, 1f)
+        fun commit(x: Float) {
+            onValueChange(valueRange.start + (x / widthPx).coerceIn(0f, 1f) * span)
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(valueRange) {
+                    detectTapGestures { offset ->
+                        commit(offset.x)
+                        onValueChangeFinished?.invoke()
+                    }
+                }
+                .pointerInput(valueRange) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = { onValueChangeFinished?.invoke() },
+                        onDragCancel = { onValueChangeFinished?.invoke() },
+                    ) { change, _ ->
+                        change.consume()
+                        commit(change.position.x)
+                    }
+                },
+        )
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxWidth()
+                .height(3.dp)
+                .background(
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                    RoundedCornerShape(2.dp),
+                ),
+        )
+        if (frac > 0f) {
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .fillMaxWidth(frac)
+                    .height(3.dp)
+                    .background(Accent, RoundedCornerShape(2.dp)),
+            )
+        }
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .offset(x = maxWidth * frac - 5.dp)
+                .size(10.dp)
+                .background(Accent, CircleShape),
         )
     }
 }
