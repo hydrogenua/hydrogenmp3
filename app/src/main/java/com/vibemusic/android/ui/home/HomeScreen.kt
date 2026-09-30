@@ -2,14 +2,26 @@ package com.vibemusic.android.ui.home
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,18 +31,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vibemusic.android.core.model.Track
 import com.vibemusic.android.core.audioPermissions
 import com.vibemusic.android.core.hasAudioPermission
 import com.vibemusic.android.core.startupPermissions
 import com.vibemusic.android.ui.PlayerViewModel
+import com.vibemusic.android.ui.components.Artwork
 import com.vibemusic.android.ui.components.TrackRow
 
 @Composable
-fun HomeScreen(viewModel: PlayerViewModel, onLongPressTrack: (Track) -> Unit) {
+fun HomeScreen(
+    viewModel: PlayerViewModel,
+    onLongPressTrack: (Track) -> Unit,
+    onOpenPlaylist: (Long, String) -> Unit,
+) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasAudioPermission(context)) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -42,40 +61,172 @@ fun HomeScreen(viewModel: PlayerViewModel, onLongPressTrack: (Track) -> Unit) {
         if (!granted) launcher.launch(startupPermissions())
     }
 
-    val tracks by viewModel.homeTracks.collectAsState()
+    val localTracks by viewModel.homeTracks.collectAsState()
     LaunchedEffect(granted) {
         if (granted) viewModel.loadHome()
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Text(
-            "Главная",
-            style = MaterialTheme.typography.headlineLarge,
-            modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 8.dp),
-        )
-        when {
-            !granted -> Column(Modifier.padding(16.dp)) {
+    // Витрина собирается из того, что уже лежит в библиотеке.
+    val history by viewModel.history.collectAsState(initial = emptyList())
+    val favorites by viewModel.favoriteTracks.collectAsState(initial = emptyList())
+    val playlists by viewModel.playlists.collectAsState(initial = emptyList())
+    val downloads by viewModel.downloadedTracks.collectAsState(initial = emptyList())
+
+    val recent = history.distinctBy { it.sourceId + it.id }.take(12)
+    val favCards = favorites.take(12)
+    val downloadCards = downloads.take(12)
+
+    LazyColumn(Modifier.fillMaxSize()) {
+        item(key = "title") {
+            Text(
+                "Главная",
+                style = MaterialTheme.typography.headlineLarge,
+                modifier = Modifier.padding(start = 16.dp, top = 24.dp, bottom = 4.dp),
+            )
+        }
+        if (recent.isEmpty() && favCards.isEmpty() && playlists.isEmpty() && downloadCards.isEmpty() && localTracks.isEmpty()) {
+            item(key = "hint") {
                 Text(
-                    "Нужен доступ к аудио, чтобы показать музыку на устройстве.",
+                    "Найди музыку в «Поиске» — недавнее, избранное и плейлисты появятся здесь.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
                 )
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = { launcher.launch(audioPermissions()) }) {
-                    Text("Дать доступ")
+            }
+        }
+
+        if (recent.isNotEmpty()) {
+            item(key = "recent_h") { SectionTitle("Недавно игравшие") }
+            item(key = "recent_r") { TrackStrip(recent, viewModel, onLongPressTrack) }
+        }
+        if (favCards.isNotEmpty()) {
+            item(key = "fav_h") { SectionTitle("Избранное") }
+            item(key = "fav_r") { TrackStrip(favCards, viewModel, onLongPressTrack) }
+        }
+        if (playlists.isNotEmpty()) {
+            item(key = "pl_h") { SectionTitle("Плейлисты") }
+            item(key = "pl_r") {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                ) {
+                    items(playlists, key = { it.id }) { pl ->
+                        Column(
+                            Modifier
+                                .width(140.dp)
+                                .clickable { onOpenPlaylist(pl.id, pl.name) },
+                        ) {
+                            Box(
+                                Modifier
+                                    .width(140.dp)
+                                    .height(140.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Filled.LibraryMusic,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.height(44.dp).width(44.dp),
+                                )
+                            }
+                            Text(
+                                pl.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                            Text(
+                                "Плейлист",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
-            tracks.isEmpty() -> Text(
-                "Пока пусто — треков на устройстве не нашлось.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(16.dp),
-            )
-            else -> LazyColumn {
-                items(tracks, key = { it.sourceId + it.id }) { track ->
-                    TrackRow(track, onClick = { viewModel.play(track, tracks) }, onLongClick = { onLongPressTrack(track) })
+        }
+        if (downloadCards.isNotEmpty()) {
+            item(key = "dl_h") { SectionTitle("Загрузки") }
+            item(key = "dl_r") { TrackStrip(downloadCards, viewModel, onLongPressTrack) }
+        }
+
+        item(key = "local_h") { SectionTitle("На устройстве") }
+        if (!granted) {
+            item(key = "local_gate") {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        "Нужен доступ к аудио, чтобы показать музыку на устройстве.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { launcher.launch(audioPermissions()) }) {
+                        Text("Дать доступ")
+                    }
                 }
             }
+        } else if (localTracks.isEmpty()) {
+            item(key = "local_empty") {
+                Text(
+                    "Треков на устройстве не нашлось.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        } else {
+            items(localTracks, key = { "local_" + it.sourceId + it.id }) { track ->
+                TrackRow(track, onClick = { viewModel.play(track, localTracks) }, onLongClick = { onLongPressTrack(track) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp),
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TrackCard(track: Track, viewModel: PlayerViewModel, queue: List<Track>, onLongClick: () -> Unit) {
+    Column(
+        Modifier
+            .width(140.dp)
+            .combinedClickable(onClick = { viewModel.play(track, queue) }, onLongClick = onLongClick),
+    ) {
+        Artwork(uri = track.artworkUri, size = 140.dp)
+        Text(
+            track.title,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 6.dp),
+        )
+        Text(
+            track.artist,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun TrackStrip(tracks: List<Track>, viewModel: PlayerViewModel, onLongPress: (Track) -> Unit) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+    ) {
+        items(tracks, key = { it.sourceId + it.id }) { track ->
+            TrackCard(track, viewModel, tracks, onLongClick = { onLongPress(track) })
         }
     }
 }

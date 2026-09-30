@@ -104,7 +104,13 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                 modifier = Modifier.padding(innerPadding),
             ) {
                 composable(Routes.Home) {
-                    HomeScreen(viewModel) { track -> menuPlaylistId = null; menuTrack = track }
+                    HomeScreen(
+                        viewModel,
+                        onLongPressTrack = { track -> menuPlaylistId = null; menuTrack = track },
+                        onOpenPlaylist = { id, name ->
+                            navController.navigate("playlist/$id/${Uri.encode(name)}")
+                        },
+                    )
                 }
                 composable(Routes.Search) {
                     SearchScreen(
