@@ -233,6 +233,8 @@ class InnerTubeClient {
         const val SEARCH_SONGS_PARAMS = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
         // Фильтр «Альбомы».
         const val SEARCH_ALBUMS_PARAMS = "EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"
+        // Фильтр «Исполнители».
+        const val SEARCH_ARTISTS_PARAMS = "EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"
 
         private val PLAYER_CLIENTS = listOf(
             PlayerClient(

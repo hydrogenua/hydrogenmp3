@@ -220,6 +220,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** Последние прослушанные треки. */
     val history: Flow<List<Track>> = dao.history().map { list -> list.map { it.toTrack() } }
 
+    /** Статистика прослушиваний из истории. */
+    data class Stats(
+        val weekPlays: Int = 0,
+        val totalPlays: Int = 0,
+        val topArtists: List<Pair<String, Int>> = emptyList(),
+        val topTracks: List<Pair<Track, Int>> = emptyList(),
+    )
+
+    val stats: Flow<Stats> = dao.history().map { rows ->
+        val weekAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+        val entities = rows.map { it.toTrack() to it.playedAt }
+        val byArtist = entities.groupBy { it.first.artist }.mapValues { it.value.size }
+            .entries.sortedByDescending { it.value }.take(10)
+        val byTrack = entities.groupBy { it.first.sourceId + it.first.id }
+            .values.map { list -> list.first().first to list.size }
+            .sortedByDescending { it.second }.take(10)
+        Stats(
+            weekPlays = entities.count { it.second >= weekAgo },
+            totalPlays = entities.size,
+            topArtists = byArtist.map { it.key to it.value },
+            topTracks = byTrack,
+        )
+    }
+
     fun clearHistory() {
         viewModelScope.launch { dao.clearHistory() }
     }
@@ -366,6 +390,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val charts = async { runCatching { ytm.chartPlaylists() }.getOrElse { emptyList() } }
             val releases = async { runCatching { ytm.newReleases() }.getOrElse { emptyList() } }
             _discover.value = Discover(moods.await(), charts.await(), releases.await())
+        }
+    }
+
+    /** Экран исполнителя: ищем UC-страницу по имени и разбираем её. */
+    data class ArtistUi(
+        val name: String,
+        val page: com.vibemusic.android.source.ytm.ArtistPage? = null,
+        val loading: Boolean = true,
+    )
+
+    private val _artistUi = MutableStateFlow<ArtistUi?>(null)
+    val artistUi: StateFlow<ArtistUi?> = _artistUi.asStateFlow()
+
+    fun openArtist(name: String) {
+        _artistUi.value = ArtistUi(name, loading = true)
+        viewModelScope.launch {
+            val ytm = registry.byId("ytm") as? YtMusicPlugin
+            val page = runCatching {
+                val id = ytm?.searchArtistId(name)
+                if (id != null) ytm?.artistPage(id) else null
+            }.getOrNull()
+            if (_artistUi.value?.name == name) {
+                _artistUi.value = ArtistUi(name, page, loading = false)
+            }
         }
     }
 

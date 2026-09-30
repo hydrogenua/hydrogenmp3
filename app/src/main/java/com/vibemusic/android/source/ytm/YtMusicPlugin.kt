@@ -77,6 +77,25 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
     suspend fun newReleases(limit: Int = 12): List<Album> =
         withContext(Dispatchers.IO) { parseBrowseAlbums(client.browse(BROWSE_NEW_RELEASES), limit) }
 
+    /** Ищет исполнителя: browseId (UC…) первой карточки исполнителей. */
+    suspend fun searchArtistId(name: String): String? = withContext(Dispatchers.IO) {
+        val response = client.search(name, InnerTubeClient.SEARCH_ARTISTS_PARAMS)
+        var id: String? = null
+        walkRenderers(response, "musicResponsiveListItemRenderer") { r ->
+            if (id == null) {
+                val bid = r.optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
+                if (bid.startsWith("UC")) id = bid
+            }
+        }
+        id
+    }
+
+    /** Страница исполнителя: шапка + популярные треки + альбомы + синглы. */
+    suspend fun artistPage(browseId: String): ArtistPage = withContext(Dispatchers.IO) {
+        parseArtistPage(client.browse(browseId))
+    }
+
     /** Радио вокруг трека: сид идёт первым, дальше похожие (состоят в RDAMVM-очереди). */
     suspend fun radioTracks(seedVideoId: String, limit: Int = 50): List<Track> =
         withContext(Dispatchers.IO) { parseAlbumTracks(client.radio(seedVideoId), limit) }
@@ -488,6 +507,92 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
         return seconds * 1000
     }
 
+    /** Разбор страницы исполнителя: immersive-шапка, безымянная полка топ-треков, карусели. */
+    internal fun parseArtistPage(response: JSONObject): ArtistPage {
+        val header = response.optJSONObject("header")
+            ?.optJSONObject("musicImmersiveHeaderRenderer")
+        val name = header?.optJSONObject("title")?.optJSONArray("runs")
+            ?.let { runs -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() } }
+            .orEmpty()
+        val art = header?.optJSONObject("thumbnail")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+            ?.let { thumbs -> (0 until thumbs.length()).maxOfOrNull { thumbs.optJSONObject(it)?.optString("url").orEmpty() }.orEmpty() }
+            .orEmpty()
+        val subscribers = header?.optJSONObject("subscriptionButton")
+            ?.optJSONObject("subscriberCountText")?.optJSONArray("runs")
+            ?.let { runs -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() } }
+            .orEmpty()
+
+        val tracks = mutableListOf<Track>()
+        val albums = mutableListOf<Album>()
+        val singles = mutableListOf<Album>()
+        var tracksShelfDone = false
+        walkRenderers(response, "musicShelfRenderer") { shelf ->
+            if (!tracksShelfDone) {
+                // Первая полка страницы исполнителя — популярные треки (без заголовка).
+                val items = shelf.optJSONArray("contents") ?: return@walkRenderers
+                for (i in 0 until items.length()) {
+                    if (tracks.size >= 10) break
+                    items.optJSONObject(i)?.optJSONObject("musicResponsiveListItemRenderer")
+                        ?.let { r -> parseSong(r)?.let { t -> if (tracks.none { it.id == t.id }) tracks += t } }
+                }
+                tracksShelfDone = true
+            }
+        }
+        walkRenderers(response, "musicCarouselShelfRenderer") { carousel ->
+            val title = carousel.optJSONObject("header")
+                ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                ?.optJSONObject("title")?.optJSONArray("runs")
+                ?.let { runs -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() } }
+                .orEmpty()
+            val items = carousel.optJSONArray("contents") ?: return@walkRenderers
+            val dest = when {
+                title.startsWith("Альбом") -> albums
+                title.startsWith("Сингл") -> singles
+                else -> return@walkRenderers
+            }
+            for (i in 0 until items.length()) {
+                if (dest.size >= 12) break
+                items.optJSONObject(i)?.optJSONObject("musicTwoRowItemRenderer")?.let { r ->
+                    val id = r.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
+                    if (id.startsWith("MPREb")) {
+                        val t = r.optJSONObject("title")?.optJSONArray("runs")
+                            ?.let { runs -> (0 until runs.length()).joinToString("") { j -> runs.optJSONObject(j)?.optString("text").orEmpty() } }
+                            .orEmpty()
+                        if (t.isNotEmpty()) {
+                            val thumb = r.optJSONObject("thumbnailRenderer")
+                                ?.optJSONObject("musicThumbnailRenderer")
+                                ?.optJSONObject("thumbnail")
+                                ?.optJSONArray("thumbnails")
+                                ?.let { thumbs -> (0 until thumbs.length()).maxOfOrNull { thumbs.optJSONObject(it)?.optString("url").orEmpty() }.orEmpty() }
+                                .orEmpty()
+                            dest += Album(
+                                id = id,
+                                title = t,
+                                subtitle = name,
+                                artworkUri = thumb.takeIf { it.isNotEmpty() }?.let { u ->
+                                    val eq = u.indexOf('=')
+                                    if (eq > 0) u.substring(0, eq) + ARTWORK_SIZE_SUFFIX else u
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        return ArtistPage(
+            name = name,
+            artworkUri = art.takeIf { it.isNotEmpty() },
+            subscriberText = subscribers.takeIf { it.isNotEmpty() },
+            tracks = tracks,
+            albums = albums,
+            singles = singles,
+        )
+    }
+
     /** Рекурсивно обходит JSON и вызывает fn на каждом объекте-рендерере с данным именем. */
     private fun walkRenderers(json: JSONObject, key: String, fn: (JSONObject) -> Unit) {
         val stack = ArrayDeque<Any?>()
@@ -514,6 +619,16 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
         const val BROWSE_NEW_RELEASES = "FEmusic_new_releases"
     }
 }
+
+/** Страница исполнителя (YT Music): шапка + популярные треки + релизы. */
+data class ArtistPage(
+    val name: String,
+    val artworkUri: String?,
+    val subscriberText: String?,
+    val tracks: List<Track>,
+    val albums: List<Album>,
+    val singles: List<Album>,
+)
 
 /** Чип настроения на Главной: подпись, endpoint категории и фирменный цвет YouTube Music. */
 data class MoodCard(val title: String, val params: String, val color: Long)

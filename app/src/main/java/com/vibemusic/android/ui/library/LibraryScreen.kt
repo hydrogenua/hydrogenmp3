@@ -40,6 +40,7 @@ fun LibraryScreen(
     viewModel: PlayerViewModel,
     onLongPressTrack: (Track) -> Unit,
     onOpenPlaylist: (Long, String) -> Unit,
+    onOpenStats: () -> Unit,
 ) {
     val favorites by viewModel.favoriteTracks.collectAsState(initial = emptyList())
     val playlists by viewModel.playlists.collectAsState(initial = emptyList())
@@ -173,6 +174,7 @@ fun LibraryScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
         ) {
             Text("История", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            TextButton(onClick = onOpenStats) { Text("Статистика") }
             if (history.isNotEmpty()) {
                 TextButton(onClick = { viewModel.clearHistory() }) { Text("Очистить") }
             }

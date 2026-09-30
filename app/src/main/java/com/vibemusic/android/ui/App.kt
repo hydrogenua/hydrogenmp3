@@ -64,8 +64,10 @@ import com.vibemusic.android.ui.album.AlbumScreen
 import com.vibemusic.android.ui.components.Artwork
 import com.vibemusic.android.ui.components.TrackMenuDialog
 import com.vibemusic.android.ui.theme.Accent
+import com.vibemusic.android.ui.artist.ArtistScreen
 import com.vibemusic.android.ui.home.HomeScreen
 import com.vibemusic.android.ui.home.MoodScreen
+import com.vibemusic.android.ui.stats.StatsScreen
 import com.vibemusic.android.ui.library.LibraryScreen
 import com.vibemusic.android.ui.library.PlaylistDetailScreen
 import com.vibemusic.android.ui.player.NowPlayingScreen
@@ -133,6 +135,21 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                     )
                 }
                 composable(
+                    route = "artist/{name}",
+                    arguments = listOf(navArgument("name") { type = NavType.StringType }),
+                ) { entry ->
+                    ArtistScreen(
+                        name = entry.arguments?.getString("name").orEmpty(),
+                        viewModel = viewModel,
+                        onOpenAlbum = { albumId ->
+                            navController.navigate("album/${Uri.encode(albumId)}")
+                        },
+                    )
+                }
+                composable(Routes.Stats) {
+                    StatsScreen(viewModel)
+                }
+                composable(
                     route = "mood/{params}/{title}",
                     arguments = listOf(
                         navArgument("params") { type = NavType.StringType },
@@ -173,6 +190,7 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                         onOpenPlaylist = { id, name ->
                             navController.navigate("playlist/$id/${Uri.encode(name)}")
                         },
+                        onOpenStats = { navController.navigate(Routes.Stats) },
                     )
                 }
                 composable(
@@ -206,7 +224,11 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                         animationSpec = androidx.compose.animation.core.tween(240),
                     ),
                 ) {
-                    NowPlayingScreen(viewModel) { playerExpanded = false }
+                    NowPlayingScreen(
+                        viewModel,
+                        onOpenArtist = { name -> navController.navigate("artist/${Uri.encode(name)}") },
+                        onBack = { playerExpanded = false },
+                    )
                 }
             }
         }
@@ -217,6 +239,7 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
             track = track,
             playlistId = menuPlaylistId,
             viewModel = viewModel,
+            onOpenArtist = { name -> navController.navigate("artist/${Uri.encode(name)}"); menuTrack = null },
             onDismiss = { menuTrack = null },
         )
     }
@@ -245,6 +268,7 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
 }
 
 private object Routes {
+        const val Stats = "stats"
     const val Home = "home"
     const val Search = "search"
     const val Library = "library"

@@ -32,6 +32,7 @@ fun TrackMenuDialog(
     track: Track,
     playlistId: Long?,
     viewModel: PlayerViewModel,
+    onOpenArtist: (String) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     var pickingPlaylist by remember { mutableStateOf(false) }
@@ -111,6 +112,9 @@ fun TrackMenuDialog(
                         viewModel.startRadio(track)
                         onDismiss()
                     }) { Text("Запустить радио от трека") }
+                    TextButton(onClick = {
+                        onOpenArtist(track.artist)
+                    }) { Text("Открыть исполнителя") }
                     TextButton(onClick = {
                         viewModel.toggleFavorite(track)
                         onDismiss()

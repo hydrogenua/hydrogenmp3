@@ -7,6 +7,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -73,7 +74,7 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
+fun NowPlayingScreen(viewModel: PlayerViewModel, onOpenArtist: (String) -> Unit, onBack: () -> Unit) {
     val track by viewModel.nowPlaying.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.positionMs.collectAsState()
@@ -178,7 +179,9 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                         t.artist,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp),
+                        modifier = Modifier
+                            .padding(top = 6.dp)
+                            .clickable { onOpenArtist(t.artist) },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
