@@ -71,6 +71,9 @@ class PlayerConnection(context: Context) {
     private var controller: MediaController? = null
     private var pendingQueue: Pair<List<Track>, Int>? = null
 
+    /** Очередь кончилась (трек доехал до конца, следующего нет) — для автоплея радио. */
+    var onQueueEnded: (() -> Unit)? = null
+
     /** Зеркало очереди плеера для UI: треки в текущем порядке + индекс играющего. */
     private val _queueTracks = MutableStateFlow<List<Track>>(emptyList())
     val queueTracks: StateFlow<List<Track>> = _queueTracks.asStateFlow()
@@ -104,6 +107,9 @@ class PlayerConnection(context: Context) {
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !c.hasNextMediaItem()) {
+                            onQueueEnded?.invoke()
+                        }
                         val mediaId = mediaItem?.mediaId ?: return
                         mediaIdToTrack[mediaId]?.let { track ->
                             _nowPlaying.value = track
@@ -207,6 +213,18 @@ class PlayerConnection(context: Context) {
             if (index in 0 until c.mediaItemCount) {
                 c.seekToDefaultPosition(index)
                 c.play()
+            }
+        }
+    }
+
+    /** Догружает треки в конец очереди (автоплей радио). */
+    fun appendToQueue(tracks: List<Track>) {
+        val c = controller ?: return
+        scope.launch(Dispatchers.Main) {
+            val items = tracks.mapNotNull { it.toMediaItem() }
+            if (items.isNotEmpty()) {
+                c.addMediaItems(items)
+                refreshQueue()
             }
         }
     }

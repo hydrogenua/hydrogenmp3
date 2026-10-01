@@ -10,6 +10,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.offset
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -41,12 +44,14 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -89,8 +94,9 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onOpenArtist: (String) -> Unit,
 
     // Пока тащим ползунок — не даём опросу позиции дёргать значение под пальцем.
     var dragPosition by remember { mutableStateOf<Float?>(null) }
-    // Показ очереди вместо обложки/управления внутри того же плеера.
+    // Показ очереди/текста вместо обложки/управления внутри того же плеера.
     var showQueue by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
 
     // Плеер тянется пальцем вниз; отпустил далеко — улетел за экран и свернулся,
     // близко — вернулся пружинкой.
@@ -141,17 +147,29 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onOpenArtist: (String) -> Unit,
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
             }
-            IconButton(onClick = { showQueue = !showQueue }) {
-                Icon(
-                    Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = "Очередь",
-                    tint = if (showQueue) Accent else MaterialTheme.colorScheme.onSurface,
-                )
+            Row {
+                IconButton(onClick = { showLyrics = !showLyrics; if (showLyrics) showQueue = false }) {
+                    Icon(
+                        Icons.Filled.Lyrics,
+                        contentDescription = "Текст песни",
+                        tint = if (showLyrics) Accent else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                IconButton(onClick = { showQueue = !showQueue; if (showQueue) showLyrics = false }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Очередь",
+                        tint = if (showQueue) Accent else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
             }
         }
         Box(Modifier.weight(1f).fillMaxSize(), contentAlignment = Alignment.Center) {
             if (showQueue) {
                 QueueScreen(viewModel) { showQueue = false }
+            } else if (showLyrics) {
+                val tNow = track
+                if (tNow != null) LyricsView(viewModel, tNow)
             } else {
             val t = track
             if (t == null) {
@@ -431,6 +449,53 @@ private fun SlimSlider(
                 .size(10.dp)
                 .background(Accent, CircleShape),
         )
+    }
+}
+
+@Composable
+private fun LyricsView(viewModel: PlayerViewModel, track: Track) {
+    var text by remember(track) { mutableStateOf<String?>(null) }
+    var loading by remember(track) { mutableStateOf(true) }
+    LaunchedEffect(track) {
+        loading = true
+        text = viewModel.lyrics(track)
+        loading = false
+    }
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+    ) {
+        Text(
+            track.title,
+            style = MaterialTheme.typography.headlineMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            track.artist,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(16.dp))
+        when {
+            loading -> CircularProgressIndicator()
+            text == null -> Text(
+                "Текст не нашёлся — у lrclib нет этого трека.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            else -> Text(
+                text!!,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 24.dp),
+            )
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 package com.vibemusic.android.ui.stats
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.vibemusic.android.ui.PlayerViewModel
 import com.vibemusic.android.ui.components.Artwork
+import com.vibemusic.android.ui.components.sourceLabel
 import com.vibemusic.android.ui.theme.Accent
 
 /**
@@ -108,6 +110,15 @@ fun StatsScreen(viewModel: PlayerViewModel) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    sourceLabel(track.sourceId),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                )
                 Text(
                     "$count×",
                     style = MaterialTheme.typography.titleMedium,

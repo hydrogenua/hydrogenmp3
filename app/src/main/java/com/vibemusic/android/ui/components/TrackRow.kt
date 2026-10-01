@@ -85,6 +85,15 @@ fun TrackRow(track: Track, onClick: () -> Unit, onLongClick: (() -> Unit)? = nul
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            sourceLabel(track.sourceId),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 5.dp, vertical = 2.dp),
+        )
         if (track.durationMs > 0) {
             Spacer(Modifier.width(8.dp))
             Text(
@@ -116,6 +125,14 @@ fun QualityBadge(quality: Quality, format: String?, modifier: Modifier = Modifie
             .border(1.dp, Accent.copy(alpha = 0.55f), RoundedCornerShape(4.dp))
             .padding(horizontal = 5.dp, vertical = 2.dp),
     )
+}
+
+/** Короткая метка источника для плашки в строках треков. */
+fun sourceLabel(sourceId: String): String = when (sourceId) {
+    "ytm" -> "YTM"
+    "sc" -> "SC"
+    "deezer" -> "DZ"
+    else -> "LOCAL"
 }
 
 fun formatDuration(ms: Long): String {

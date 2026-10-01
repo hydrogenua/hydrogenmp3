@@ -1,6 +1,7 @@
 package com.vibemusic.android.ui.player
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Column
@@ -41,6 +42,7 @@ import androidx.compose.ui.zIndex
 import com.vibemusic.android.core.model.Track
 import com.vibemusic.android.ui.PlayerViewModel
 import com.vibemusic.android.ui.components.Artwork
+import com.vibemusic.android.ui.components.sourceLabel
 import kotlinx.coroutines.launch
 
 /**
@@ -146,6 +148,15 @@ fun QueueScreen(viewModel: PlayerViewModel, onJump: () -> Unit) {
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    sourceLabel(track.sourceId),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f), androidx.compose.foundation.shape.RoundedCornerShape(4.dp))
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                )
                 if (isCurrent) {
                     Icon(
                         Icons.Filled.MusicNote,

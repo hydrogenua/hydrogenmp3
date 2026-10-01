@@ -46,6 +46,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val registry = SourceRegistry(application)
     private val connection = PlayerConnection(application)
+
+    init {
+        // Очередь доехала до конца — бесшовно догружаем радио вокруг играющего трека.
+        connection.onQueueEnded = { appendRadio() }
+    }
     private val dao = LibraryDb.get(application).libraryDao()
     private val downloads = DownloadRepository(application, dao, registry)
     private val deezerClient = DeezerClient(application)
@@ -452,6 +457,27 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private var radioAppending = false
+
+    /** Автоплей: когда очередь кончилась, тихо добавляем радио от текущего YT-трека. */
+    private fun appendRadio() {
+        if (radioAppending) return
+        val seed = nowPlaying.value ?: return
+        if (seed.sourceId != "ytm") return
+        radioAppending = true
+        viewModelScope.launch {
+            try {
+                val ytm = registry.byId("ytm") as? YtMusicPlugin ?: return@launch
+                val tracks = runCatching { ytm.radioTracks(seed.id) }.getOrElse { emptyList() }
+                val queued = queueTracks.value.map { it.sourceId + it.id }.toSet()
+                val fresh = tracks.filter { (it.sourceId + it.id) !in queued }
+                if (fresh.isNotEmpty()) connection.appendToQueue(fresh)
+            } finally {
+                radioAppending = false
+            }
+        }
+    }
+
     /**
      * Радио: очередь «похожего» вокруг сида. Сид — переданный трек (для не-YT
      * ищем аналог в YT Music по названию), иначе случайный лайк, иначе текущий
@@ -482,6 +508,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             play(seedFinal, queue)
         }
     }
+
+    /** Текст песни (lrclib.org), кэшируется по паре артист-название. */
+    suspend fun lyrics(track: Track): String? =
+        com.vibemusic.android.data.lyrics.LyricsRepository.fetch(
+            track.artist,
+            track.title,
+            track.durationMs / 1000,
+        )
 
     fun playNext() = connection.nextMedia()
 
