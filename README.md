@@ -1,4 +1,4 @@
-# Vibe Music
+# Hydrogen
 
 Нативный Android-плеер «всё в одном»: вместо YT Music, SoundCloud, Deezer и VK Music.
 Полностью автономный (zero-backend): все запросы и извлечение аудиопотоков выполняются
