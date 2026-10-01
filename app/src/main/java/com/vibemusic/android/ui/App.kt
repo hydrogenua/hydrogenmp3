@@ -269,7 +269,16 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                         viewModel,
                         onOpenArtist = { name -> navController.navigate("artist/${Uri.encode(name)}") },
                         onArtworkPosition = { playerArtBounds = it },
-                        onCollapseCommit = { startFlyArt() },
+                        miniBounds = miniArtBounds,
+                        onCollapseCommit = { targetRect ->
+                            // Обложка уже в уголке (морф за драг) — оверлей держит её,
+                            // пока панель уезжает и появляется мини-плеер.
+                            flyArt = FlyArtSpec(
+                                viewModel.nowPlaying.value?.artworkUri,
+                                targetRect,
+                                miniArtBounds ?: targetRect,
+                            )
+                        },
                         onBack = {
                             // Из кнопки «назад» летим тоже, если полёт ещё не запущен свайпом.
                             if (flyArt == null) startFlyArt()

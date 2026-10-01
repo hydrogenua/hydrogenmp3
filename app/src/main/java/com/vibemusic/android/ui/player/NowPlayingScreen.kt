@@ -63,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -85,7 +86,8 @@ fun NowPlayingScreen(
     viewModel: PlayerViewModel,
     onOpenArtist: (String) -> Unit,
     onArtworkPosition: (androidx.compose.ui.geometry.Rect) -> Unit = {},
-    onCollapseCommit: () -> Unit = {},
+    miniBounds: androidx.compose.ui.geometry.Rect? = null,
+    onCollapseCommit: (androidx.compose.ui.geometry.Rect) -> Unit = {},
     onBack: () -> Unit,
 ) {
     val track by viewModel.nowPlaying.collectAsState()
@@ -105,6 +107,11 @@ fun NowPlayingScreen(
     // Показ очереди/текста вместо обложки/управления внутри того же плеера.
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
+
+    // Морф обложки при драге: позиция покоя (без сдвига панели) и флаг,
+    // что при сворачивании обложку панели прячет летящая копия.
+    var restingArt by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    var hideArtAtCollapse by remember { mutableStateOf(false) }
 
     // Плеер тянется пальцем вниз; отпустил далеко — улетел за экран и свернулся,
     // близко — вернулся пружинкой.
@@ -127,8 +134,12 @@ fun NowPlayingScreen(
                     },
                     onDragEnd = {
                         if (dragOffset.value > 480f) {
-                            // Полёт обложки в мини-плеер стартует сразу в момент сворачивания.
-                            onCollapseCommit()
+                            // Обложка уже доехала до уголка (морф за время драга) —
+                            // прячем свою и отдаём эстафету летящему оверлею.
+                            hideArtAtCollapse = true
+                            onCollapseCommit(
+                                miniBounds ?: restingArt ?: androidx.compose.ui.geometry.Rect.Zero,
+                            )
                             scope.launch {
                                 dragOffset.animateTo(2400f, tween(230))
                                 onBack()
@@ -196,7 +207,30 @@ fun NowPlayingScreen(
                     Artwork(
                         uri = t.artworkUri,
                         size = 280.dp,
-                        modifier = Modifier.onGloballyPositioned { onArtworkPosition(it.boundsInRoot()) },
+                        modifier = Modifier
+                            .onGloballyPositioned { coords ->
+                                val b = coords.boundsInRoot()
+                                // Пока панель не поехала — это позиция покоя.
+                                if (dragOffset.value < 1f) restingArt = b
+                                onArtworkPosition(b)
+                            }
+                            .graphicsLayer {
+                                if (hideArtAtCollapse) { alpha = 0f; return@graphicsLayer }
+                                val rest = restingArt ?: return@graphicsLayer
+                                val target = miniBounds ?: return@graphicsLayer
+                                val drag = dragOffset.value
+                                if (drag <= 0f) return@graphicsLayer
+                                val p = (drag / 480f).coerceIn(0f, 1f)
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                                // Едем к мини-плееру быстрее, чем панель уезжает вниз.
+                                val px = rest.left + (target.left - rest.left) * p
+                                val py = rest.top + (target.top - rest.top) * p
+                                translationX = px - rest.left
+                                translationY = py - (rest.top + drag)
+                                val scale = (rest.width + (target.width - rest.width) * p) / rest.width
+                                scaleX = scale
+                                scaleY = scale
+                            },
                     )
                     Spacer(Modifier.height(24.dp))
                     Text(
