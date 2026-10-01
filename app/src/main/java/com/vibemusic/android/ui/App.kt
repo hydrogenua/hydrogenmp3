@@ -499,6 +499,9 @@ private fun FlyArtOverlay(spec: FlyArtSpec, onDone: () -> Unit) {
             size = with(LocalDensity.current) { maxW.toDp() },
             modifier = Modifier.graphicsLayer {
                 val p = progress.value
+                // Пивот в левый верхний угол: иначе масштаб от центра сдвигает
+                // картинку от рассчитанного пути (летит в центр низа, не в угол).
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
                 translationX = spec.from.left + (spec.to.left - spec.from.left) * p
                 translationY = spec.from.top + (spec.to.top - spec.from.top) * p
                 val scale = (fromW + (toW - fromW) * p) / maxW
