@@ -12,3 +12,6 @@ val ARL_KEY = stringPreferencesKey("deezer_arl")
 
 /** Тег версии, для которой юзер нажал «Позже» на обновлении. */
 val DISMISSED_UPDATE_KEY = stringPreferencesKey("dismissed_update_tag")
+
+/** Язык интерфейса: "system" | "ru" | "en". */
+val LANG_KEY = stringPreferencesKey("app_lang")

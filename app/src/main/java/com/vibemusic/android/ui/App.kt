@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.offset
@@ -60,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import android.net.Uri
+import com.vibemusic.android.R
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -76,7 +78,12 @@ import com.vibemusic.android.ui.artist.ArtistScreen
 import com.vibemusic.android.ui.home.HomeScreen
 import com.vibemusic.android.ui.home.MoodScreen
 import com.vibemusic.android.ui.stats.StatsScreen
+import com.vibemusic.android.ui.library.DownloadsScreen
+import com.vibemusic.android.ui.library.FavoritesScreen
+import com.vibemusic.android.ui.library.HistoryScreen
 import com.vibemusic.android.ui.library.LibraryScreen
+import com.vibemusic.android.ui.library.PlaylistsScreen
+import com.vibemusic.android.ui.settings.SettingsScreen
 import com.vibemusic.android.ui.library.PlaylistDetailScreen
 import com.vibemusic.android.ui.player.NowPlayingScreen
 import com.vibemusic.android.ui.search.SearchScreen
@@ -227,12 +234,34 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                 composable(Routes.Library) {
                     LibraryScreen(
                         viewModel,
-                        onLongPressTrack = { track -> menuPlaylistId = null; menuTrack = track },
-                        onOpenPlaylist = { id, name ->
-                            navController.navigate("playlist/$id/${Uri.encode(name)}")
-                        },
+                        onOpenFavorites = { navController.navigate(Routes.Favorites) },
+                        onOpenPlaylists = { navController.navigate(Routes.Playlists) },
+                        onOpenDownloads = { navController.navigate(Routes.Downloads) },
+                        onOpenHistory = { navController.navigate(Routes.History) },
                         onOpenStats = { navController.navigate(Routes.Stats) },
+                        onOpenSettings = { navController.navigate(Routes.Settings) },
                     )
+                }
+                composable(Routes.Favorites) {
+                    FavoritesScreen(viewModel) { track -> menuPlaylistId = null; menuTrack = track }
+                }
+                composable(Routes.Playlists) {
+                    PlaylistsScreen(viewModel) { id, name ->
+                        navController.navigate("playlist/$id/${Uri.encode(name)}")
+                    }
+                }
+                composable(Routes.Downloads) {
+                    DownloadsScreen(viewModel) { track -> menuPlaylistId = null; menuTrack = track }
+                }
+                composable(Routes.History) {
+                    HistoryScreen(
+                        viewModel,
+                        onOpenStats = { navController.navigate(Routes.Stats) },
+                        onLongPressTrack = { track -> menuPlaylistId = null; menuTrack = track },
+                    )
+                }
+                composable(Routes.Settings) {
+                    SettingsScreen(viewModel)
                 }
                 composable(
                     route = "playlist/{playlistId}/{playlistName}",
@@ -329,6 +358,11 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
 
 private object Routes {
         const val Stats = "stats"
+        const val Favorites = "favorites"
+        const val Playlists = "playlists"
+        const val Downloads = "downloads"
+        const val History = "history"
+        const val Settings = "settings"
     const val Home = "home"
     const val Search = "search"
     const val Library = "library"
@@ -383,9 +417,9 @@ private data class BottomItem(val route: String, val label: String, val icon: Im
 @Composable
 private fun VibeBottomBar(navController: NavHostController, currentRoute: String?) {
     val items = listOf(
-        BottomItem(Routes.Home, "Главная", Icons.Filled.Home),
-        BottomItem(Routes.Search, "Поиск", Icons.Filled.Search),
-        BottomItem(Routes.Library, "Библиотека", Icons.Filled.LibraryMusic),
+        BottomItem(Routes.Home, stringResource(R.string.tab_home), Icons.Filled.Home),
+        BottomItem(Routes.Search, stringResource(R.string.tab_search), Icons.Filled.Search),
+        BottomItem(Routes.Library, stringResource(R.string.tab_library), Icons.Filled.LibraryMusic),
     )
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(

@@ -1,6 +1,7 @@
 package com.vibemusic.android.ui
 
 import android.app.Application
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -21,6 +22,7 @@ import com.vibemusic.android.source.deezer.DeezerClient
 import com.vibemusic.android.source.SourceRegistry
 import com.vibemusic.android.source.ytm.YtMusicPlugin
 import com.vibemusic.android.update.UpdateManager
+import java.io.File
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -106,6 +108,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val id = dao.insertPlaylist(PlaylistEntity(name = name, createdAt = System.currentTimeMillis()))
             addToPlaylist(id, track)
+        }
+    }
+
+    fun renamePlaylist(playlistId: Long, name: String) {
+        viewModelScope.launch { dao.renamePlaylist(playlistId, name) }
+    }
+
+    /** Своя обложка плейлиста: копируем выбранную картинку в папку приложения. */
+    fun setPlaylistCover(playlistId: Long, source: Uri?) {
+        if (source == null) return
+        viewModelScope.launch {
+            val dest = File(File(getApplication<Application>().filesDir, "covers").apply { mkdirs() }, "playlist_$playlistId.jpg")
+            runCatching {
+                getApplication<Application>().contentResolver.openInputStream(source)?.use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
+                }
+                dao.setPlaylistCover(playlistId, dest.absolutePath)
+            }
         }
     }
 

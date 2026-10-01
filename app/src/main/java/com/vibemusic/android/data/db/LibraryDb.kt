@@ -40,6 +40,7 @@ data class PlaylistEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val createdAt: Long,
+    val coverPath: String? = null,
 )
 
 /** Скачанный трек: лежит файлом в app-папке, играет без интернета. */
@@ -219,6 +220,12 @@ interface LibraryDao {
     @Insert
     suspend fun insertPlaylist(entity: PlaylistEntity): Long
 
+    @Query("UPDATE playlists SET name = :name WHERE id = :playlistId")
+    suspend fun renamePlaylist(playlistId: Long, name: String)
+
+    @Query("UPDATE playlists SET coverPath = :path WHERE id = :playlistId")
+    suspend fun setPlaylistCover(playlistId: Long, path: String?)
+
     @Query("DELETE FROM playlists WHERE id = :playlistId")
     suspend fun deletePlaylist(playlistId: Long)
 
@@ -279,7 +286,7 @@ interface LibraryDao {
         DownloadEntity::class,
         HistoryEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class LibraryDatabase : RoomDatabase() {
@@ -313,12 +320,18 @@ object LibraryDb {
         }
     }
 
+    private val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `playlists` ADD COLUMN `coverPath` TEXT")
+        }
+    }
+
     @Volatile
     private var instance: LibraryDatabase? = null
 
     fun get(context: Context): LibraryDatabase = instance ?: synchronized(this) {
         instance ?: Room.databaseBuilder(context, LibraryDatabase::class.java, "vibe_library.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
             .build()
             .also { instance = it }
     }
