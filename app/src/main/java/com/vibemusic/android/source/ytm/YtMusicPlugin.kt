@@ -583,6 +583,39 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
                 }
             }
         }
+        val similar = mutableListOf<ArtistCard>()
+        val seenArtists = mutableSetOf<String>()
+        walkRenderers(response, "musicCarouselShelfRenderer") { carousel ->
+            val title = carousel.optJSONObject("header")
+                ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                ?.optJSONObject("title")?.optJSONArray("runs")
+                ?.let { runs -> (0 until runs.length()).joinToString("") { i -> runs.optJSONObject(i)?.optString("text").orEmpty() } }
+                .orEmpty()
+            if (!title.startsWith("Похожие")) return@walkRenderers
+            val items = carousel.optJSONArray("contents") ?: return@walkRenderers
+            for (i in 0 until items.length()) {
+                if (similar.size >= 12) break
+                val r = items.optJSONObject(i)?.optJSONObject("musicTwoRowItemRenderer") ?: continue
+                val bid = r.optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
+                if (!bid.startsWith("UC") || !seenArtists.add(bid)) continue
+                val t = r.optJSONObject("title")?.optJSONArray("runs")
+                    ?.let { runs -> (0 until runs.length()).joinToString("") { j -> runs.optJSONObject(j)?.optString("text").orEmpty() } }
+                    .orEmpty()
+                if (t.isEmpty()) continue
+                val thumb = r.optJSONObject("thumbnailRenderer")
+                    ?.optJSONObject("musicThumbnailRenderer")
+                    ?.optJSONObject("thumbnail")
+                    ?.optJSONArray("thumbnails")
+                    ?.let { thumbs -> (0 until thumbs.length()).maxOfOrNull { thumbs.optJSONObject(it)?.optString("url").orEmpty() }.orEmpty() }
+                    .orEmpty()
+                similar += ArtistCard(t, bid, thumb.takeIf { it.isNotEmpty() })
+            }
+        }
+        // Плейлисты артиста: карточки с watchPlaylistEndpoint (RD…/OLAK5uy…) —
+        // в них попадают «Плейлисты исполнителя» и «Где встречается».
+        val playlists = parsePlaylistCards(response)
+
         return ArtistPage(
             name = name,
             artworkUri = art.takeIf { it.isNotEmpty() },
@@ -590,6 +623,8 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
             tracks = tracks,
             albums = albums,
             singles = singles,
+            similar = similar,
+            playlists = playlists,
         )
     }
 
@@ -620,7 +655,10 @@ class YtMusicPlugin(context: Context) : SourcePlugin {
     }
 }
 
-/** Страница исполнителя (YT Music): шапка + популярные треки + релизы. */
+/** Похожий исполнитель со страницы артиста: имя + его UC-страница. */
+data class ArtistCard(val name: String, val browseId: String, val artworkUri: String?)
+
+/** Страница исполнителя (YT Music): шапка + популярные треки + релизы + соседи. */
 data class ArtistPage(
     val name: String,
     val artworkUri: String?,
@@ -628,6 +666,8 @@ data class ArtistPage(
     val tracks: List<Track>,
     val albums: List<Album>,
     val singles: List<Album>,
+    val similar: List<ArtistCard> = emptyList(),
+    val playlists: List<PlaylistCard> = emptyList(),
 )
 
 /** Чип настроения на Главной: подпись, endpoint категории и фирменный цвет YouTube Music. */

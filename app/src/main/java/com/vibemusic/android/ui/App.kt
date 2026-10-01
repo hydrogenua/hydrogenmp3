@@ -135,14 +135,25 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                     )
                 }
                 composable(
-                    route = "artist/{name}",
-                    arguments = listOf(navArgument("name") { type = NavType.StringType }),
+                    route = "artist/{name}?id={id}",
+                    arguments = listOf(
+                        navArgument("name") { type = NavType.StringType },
+                        navArgument("id") {
+                            type = NavType.StringType
+                            defaultValue = ""
+                        },
+                    ),
                 ) { entry ->
                     ArtistScreen(
                         name = entry.arguments?.getString("name").orEmpty(),
+                        browseId = entry.arguments?.getString("id")?.takeIf { it.isNotEmpty() },
                         viewModel = viewModel,
                         onOpenAlbum = { albumId ->
                             navController.navigate("album/${Uri.encode(albumId)}")
+                        },
+                        onOpenArtist = { name, id ->
+                            val q = if (id.isNotEmpty()) "?id=${Uri.encode(id)}" else ""
+                            navController.navigate("artist/${Uri.encode(name)}$q")
                         },
                     )
                 }

@@ -403,12 +403,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _artistUi = MutableStateFlow<ArtistUi?>(null)
     val artistUi: StateFlow<ArtistUi?> = _artistUi.asStateFlow()
 
-    fun openArtist(name: String) {
+    fun openArtist(name: String, browseId: String? = null) {
         _artistUi.value = ArtistUi(name, loading = true)
         viewModelScope.launch {
             val ytm = registry.byId("ytm") as? YtMusicPlugin
             val page = runCatching {
-                val id = ytm?.searchArtistId(name)
+                // Для похожих исполнителей browseId уже известен — без поиска.
+                val id = browseId ?: ytm?.searchArtistId(name)
                 if (id != null) ytm?.artistPage(id) else null
             }.getOrNull()
             if (_artistUi.value?.name == name) {

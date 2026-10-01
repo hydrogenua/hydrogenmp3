@@ -36,11 +36,13 @@ import com.vibemusic.android.ui.components.TrackRow
 @Composable
 fun ArtistScreen(
     name: String,
+    browseId: String?,
     viewModel: PlayerViewModel,
     onOpenAlbum: (String) -> Unit,
+    onOpenArtist: (String, String) -> Unit,
 ) {
     val artist by viewModel.artistUi.collectAsState()
-    LaunchedEffect(name) { viewModel.openArtist(name) }
+    LaunchedEffect(name, browseId) { viewModel.openArtist(name, browseId) }
 
     val page = artist?.takeIf { it.name == name }?.page
     val loading = artist?.takeIf { it.name == name }?.loading ?: true
@@ -103,6 +105,63 @@ fun ArtistScreen(
                 if (page.singles.isNotEmpty()) {
                     item(key = "sng_h") { SectionTitle("Синглы") }
                     item(key = "sng_r") { AlbumStrip(page.singles, onOpenAlbum) }
+                }
+                if (page.playlists.isNotEmpty()) {
+                    item(key = "pl_h") { SectionTitle("Плейлисты") }
+                    item(key = "pl_r") {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                        ) {
+                            items(page.playlists, key = { it.playlistId }) { card ->
+                                Column(
+                                    Modifier
+                                        .width(140.dp)
+                                        .clickable { viewModel.playPlaylistCard(card) },
+                                ) {
+                                    Artwork(uri = card.artworkUri, size = 140.dp)
+                                    Text(
+                                        card.title,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 6.dp),
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                if (page.similar.isNotEmpty()) {
+                    item(key = "sim_h") { SectionTitle("Похожие исполнители") }
+                    item(key = "sim_r") {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                        ) {
+                            items(page.similar, key = { it.browseId }) { similar ->
+                                Column(
+                                    Modifier
+                                        .width(140.dp)
+                                        .clickable { onOpenArtist(similar.name, similar.browseId) },
+                                ) {
+                                    Artwork(uri = similar.artworkUri, size = 140.dp)
+                                    Text(
+                                        similar.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 6.dp),
+                                    )
+                                    Text(
+                                        "Исполнитель",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
