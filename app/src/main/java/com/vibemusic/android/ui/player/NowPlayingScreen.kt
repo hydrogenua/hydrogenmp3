@@ -193,7 +193,11 @@ fun NowPlayingScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(horizontal = 24.dp),
                 ) {
-                    Artwork(uri = t.artworkUri, size = 280.dp)
+                    Artwork(
+                        uri = t.artworkUri,
+                        size = 280.dp,
+                        modifier = Modifier.onGloballyPositioned { onArtworkPosition(it.boundsInRoot()) },
+                    )
                     Spacer(Modifier.height(24.dp))
                     Text(
                         t.title,
