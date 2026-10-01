@@ -63,6 +63,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,7 +81,13 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NowPlayingScreen(viewModel: PlayerViewModel, onOpenArtist: (String) -> Unit, onBack: () -> Unit) {
+fun NowPlayingScreen(
+    viewModel: PlayerViewModel,
+    onOpenArtist: (String) -> Unit,
+    onArtworkPosition: (androidx.compose.ui.geometry.Rect) -> Unit = {},
+    onCollapseCommit: () -> Unit = {},
+    onBack: () -> Unit,
+) {
     val track by viewModel.nowPlaying.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val positionMs by viewModel.positionMs.collectAsState()
@@ -119,6 +127,8 @@ fun NowPlayingScreen(viewModel: PlayerViewModel, onOpenArtist: (String) -> Unit,
                     },
                     onDragEnd = {
                         if (dragOffset.value > 480f) {
+                            // Полёт обложки в мини-плеер стартует сразу в момент сворачивания.
+                            onCollapseCommit()
                             scope.launch {
                                 dragOffset.animateTo(2400f, tween(230))
                                 onBack()

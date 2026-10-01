@@ -45,7 +45,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,6 +95,16 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
     // содержимое под ним видно сразу, без «прогрузки».
     var playerExpanded by remember { mutableStateOf(false) }
 
+    // Полёт обложки при сворачивании: от большой обложки — в мини-плеер (как в YT Music).
+    var playerArtBounds by remember { mutableStateOf<Rect?>(null) }
+    var miniArtBounds by remember { mutableStateOf<Rect?>(null) }
+    var flyArt by remember { mutableStateOf<FlyArtSpec?>(null) }
+    fun startFlyArt() {
+        val from = playerArtBounds ?: return
+        val to = miniArtBounds ?: return
+        flyArt = FlyArtSpec(viewModel.nowPlaying.value?.artworkUri, from, to)
+    }
+
     val updateInfo by viewModel.updateInfo.collectAsState()
     val updateDismissed by viewModel.updateDismissed.collectAsState()
     LaunchedEffect(Unit) { viewModel.checkForUpdates() }
@@ -101,7 +118,11 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                 Column {
                     // Пока раскрыт большой плеер, мини-плеер прячем — вкладки остаются.
                     if (!playerExpanded) {
-                        MiniPlayer(viewModel = viewModel, onOpenPlayer = { playerExpanded = true })
+                        MiniPlayer(
+                            viewModel = viewModel,
+                            onOpenPlayer = { playerExpanded = true },
+                            onArtworkPosition = { miniArtBounds = it },
+                        )
                     }
                     VibeBottomBar(navController, currentRoute)
                 }
@@ -238,10 +259,20 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                     NowPlayingScreen(
                         viewModel,
                         onOpenArtist = { name -> navController.navigate("artist/${Uri.encode(name)}") },
-                        onBack = { playerExpanded = false },
+                        onArtworkPosition = { playerArtBounds = it },
+                        onCollapseCommit = { startFlyArt() },
+                        onBack = {
+                            // Из кнопки «назад» летим тоже, если полёт ещё не запущен свайпом.
+                            if (flyArt == null) startFlyArt()
+                            playerExpanded = false
+                        },
                     )
                 }
             }
+        }
+
+        flyArt?.let { spec ->
+            FlyArtOverlay(spec) { flyArt = null }
         }
     }
 
@@ -386,7 +417,11 @@ private fun VibeBottomBar(navController: NavHostController, currentRoute: String
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MiniPlayer(viewModel: PlayerViewModel, onOpenPlayer: () -> Unit) {
+private fun MiniPlayer(
+    viewModel: PlayerViewModel,
+    onOpenPlayer: () -> Unit,
+    onArtworkPosition: (Rect) -> Unit = {},
+) {
     val nowPlaying by viewModel.nowPlaying.collectAsState()
     val isPlaying by viewModel.isPlaying.collectAsState()
     val track = nowPlaying ?: return
@@ -399,7 +434,11 @@ private fun MiniPlayer(viewModel: PlayerViewModel, onOpenPlayer: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(uri = track.artworkUri, size = 44.dp)
+        Artwork(
+            uri = track.artworkUri,
+            size = 44.dp,
+            modifier = Modifier.onGloballyPositioned { onArtworkPosition(it.boundsInRoot()) },
+        )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -422,5 +461,30 @@ private fun MiniPlayer(viewModel: PlayerViewModel, onOpenPlayer: () -> Unit) {
                 contentDescription = null,
             )
         }
+    }
+}
+
+/** Полёт обложки: откуда и куда (экранные координаты), с какой обложкой. */
+private data class FlyArtSpec(val uri: String?, val from: Rect, val to: Rect)
+
+@Composable
+private fun FlyArtOverlay(spec: FlyArtSpec, onDone: () -> Unit) {
+    val progress = remember(spec) { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(spec) {
+        progress.animateTo(1f, androidx.compose.animation.core.tween(280))
+        onDone()
+    }
+    val p = progress.value
+    fun lerp(a: Float, b: Float) = a + (b - a) * p
+    val left = lerp(spec.from.left, spec.to.left)
+    val top = lerp(spec.from.top, spec.to.top)
+    val sizePx = lerp(spec.from.width, spec.to.width)
+    val sizeDp = with(LocalDensity.current) { sizePx.toDp() }
+    Box(Modifier.fillMaxSize()) {
+        Artwork(
+            uri = spec.uri,
+            size = sizeDp,
+            modifier = Modifier.offset { IntOffset(left.roundToInt(), top.roundToInt()) },
+        )
     }
 }
