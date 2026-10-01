@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.IntOffset
@@ -120,7 +121,15 @@ fun VibeApp(viewModel: PlayerViewModel = viewModel()) {
                     if (!playerExpanded) {
                         MiniPlayer(
                             viewModel = viewModel,
-                            onOpenPlayer = { playerExpanded = true },
+                            onOpenPlayer = {
+                                // Обратный полёт: обложка выпрыгивает из уголка в большой размер.
+                                val from = miniArtBounds
+                                val to = playerArtBounds
+                                if (from != null && to != null) {
+                                    flyArt = FlyArtSpec(viewModel.nowPlaying.value?.artworkUri, from, to)
+                                }
+                                playerExpanded = true
+                            },
                             onArtworkPosition = { miniArtBounds = it },
                         )
                     }
@@ -471,20 +480,31 @@ private data class FlyArtSpec(val uri: String?, val from: Rect, val to: Rect)
 private fun FlyArtOverlay(spec: FlyArtSpec, onDone: () -> Unit) {
     val progress = remember(spec) { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(spec) {
-        progress.animateTo(1f, androidx.compose.animation.core.tween(280))
+        progress.animateTo(
+            1f,
+            androidx.compose.animation.core.tween(280, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        )
         onDone()
     }
-    val p = progress.value
-    fun lerp(a: Float, b: Float) = a + (b - a) * p
-    val left = lerp(spec.from.left, spec.to.left)
-    val top = lerp(spec.from.top, spec.to.top)
-    val sizePx = lerp(spec.from.width, spec.to.width)
-    val sizeDp = with(LocalDensity.current) { sizePx.toDp() }
+
+    // Рисуем обложку ОДИН раз в КРУПНОМ размере (битет в кэш Coil с большой
+    // обложки плеера — не мыльно при увеличении) и гоним только GPU-трансформации:
+    // reading progress внутри graphicsLayer не вызывает рекомпозицию на кадр.
+    val fromW = spec.from.width
+    val toW = spec.to.width
+    val maxW = maxOf(fromW, toW)
     Box(Modifier.fillMaxSize()) {
         Artwork(
             uri = spec.uri,
-            size = sizeDp,
-            modifier = Modifier.offset { IntOffset(left.roundToInt(), top.roundToInt()) },
+            size = with(LocalDensity.current) { maxW.toDp() },
+            modifier = Modifier.graphicsLayer {
+                val p = progress.value
+                translationX = spec.from.left + (spec.to.left - spec.from.left) * p
+                translationY = spec.from.top + (spec.to.top - spec.from.top) * p
+                val scale = (fromW + (toW - fromW) * p) / maxW
+                scaleX = scale
+                scaleY = scale
+            },
         )
     }
 }
