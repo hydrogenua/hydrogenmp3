@@ -183,14 +183,16 @@ class PlayerConnection(context: Context) {
             return
         }
         mediaIdToTrack.clear()
-        tracks.forEach { mediaIdToTrack["${it.sourceId}:${it.id}"] = it }
+        // Дубли в очереди сломали бы ключи экрана очереди — убираем повторы.
+        val unique = tracks.distinctBy { it.sourceId + it.id }
+        unique.forEach { mediaIdToTrack["${it.sourceId}:${it.id}"] = it }
         _nowPlaying.value = tracks.getOrNull(startIndex)
         _durationMs.value = tracks.getOrNull(startIndex)?.durationMs ?: 0L
         _positionMs.value = 0L
         _error.value = null
         streamRetryCount = 0
         scope.launch(Dispatchers.Main) {
-            val items = tracks.mapNotNull { it.toMediaItem() }
+            val items = unique.mapNotNull { it.toMediaItem() }
             if (items.isEmpty()) return@launch
             c.setMediaItems(items, startIndex.coerceIn(0, items.lastIndex), 0L)
             c.prepare()

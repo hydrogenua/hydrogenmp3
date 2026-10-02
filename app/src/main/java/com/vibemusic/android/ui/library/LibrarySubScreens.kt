@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -104,7 +105,8 @@ fun HistoryScreen(
                 )
             }
         } else {
-            items(history.take(50), key = { "h" + it.sourceId + it.id + it.hashCode() }) { track ->
+            // В истории один трек играет много раз — ключ по позиции.
+            itemsIndexed(history.take(50), key = { index, _ -> "h$index" }) { _, track ->
                 TrackRow(track, onClick = { viewModel.play(track, history) }, onLongClick = { onLongPressTrack(track) })
             }
         }
