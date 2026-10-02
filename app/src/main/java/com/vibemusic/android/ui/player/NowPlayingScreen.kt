@@ -81,6 +81,10 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
+// Насколько обложка сжимается и дрейфует к уголку за время драга (0..1 прогресса).
+private const val ART_SHRINK = 0.55f
+private const val ART_DRIFT = 0.6f
+
 @Composable
 fun NowPlayingScreen(
     viewModel: PlayerViewModel,
@@ -135,11 +139,14 @@ fun NowPlayingScreen(
                             // Полёт обложки стартует с её текущего места (панель утащила
                             // её вниз на dragOffset) и несёт в уголок мини-плеера.
                             hideArtAtCollapse = true
-                            val visual = restingArt?.let {
-                                androidx.compose.ui.geometry.Rect(
-                                    it.left, it.top + dragOffset.value,
-                                    it.right, it.bottom + dragOffset.value,
-                                )
+                            val visual = restingArt?.let { rest ->
+                                val p = (dragOffset.value / 480f).coerceIn(0f, 1f)
+                                val scale = 1f - ART_SHRINK * p
+                                val size = rest.width * scale
+                                val mini = miniBounds
+                                val px = rest.left + ((mini?.left ?: rest.left) - rest.left) * p * ART_DRIFT
+                                val py = rest.top + ((mini?.top ?: rest.top) - rest.top) * p * ART_DRIFT
+                                androidx.compose.ui.geometry.Rect(px, py, px + size, py + size)
                             }
                             onCollapseCommit(visual ?: miniBounds ?: androidx.compose.ui.geometry.Rect.Zero)
                             scope.launch {
@@ -217,9 +224,22 @@ fun NowPlayingScreen(
                                 onArtworkPosition(b)
                             }
                             .graphicsLayer {
-                                // Обложка едет вниз ВМЕСТЕ с панелью, оставаясь крупной
-                                // (как в YT Music); в уголок её несёт оверлей после коммита.
-                                if (hideArtAtCollapse) alpha = 0f
+                                // Во время драга обложка плавно уменьшается и дрейфует
+                                // к уголку мини-плеера; в уголок её доносит оверлей.
+                                if (hideArtAtCollapse) { alpha = 0f; return@graphicsLayer }
+                                val rest = restingArt ?: return@graphicsLayer
+                                val target = miniBounds ?: return@graphicsLayer
+                                val drag = dragOffset.value
+                                if (drag <= 0f) return@graphicsLayer
+                                val p = (drag / 480f).coerceIn(0f, 1f)
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                                val scale = 1f - ART_SHRINK * p
+                                val px = rest.left + (target.left - rest.left) * p * ART_DRIFT
+                                val py = rest.top + (target.top - rest.top) * p * ART_DRIFT
+                                translationX = px - rest.left
+                                translationY = py - (rest.top + drag)
+                                scaleX = scale
+                                scaleY = scale
                             },
                     )
                     Spacer(Modifier.height(24.dp))
