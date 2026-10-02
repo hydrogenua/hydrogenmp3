@@ -111,9 +111,9 @@ fun NowPlayingScreen(
     var showQueue by remember { mutableStateOf(false) }
     var showLyrics by remember { mutableStateOf(false) }
 
-    // Морф обложки при драге: позиция покоя (без сдвига панели) и флаг,
-    // что при сворачивании обложку панели прячет летящая копия.
-    var restingArt by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    // Морф обложки при драге: фактический прямоугольник на экране (обновляется
+    // каждым layout-проходом) — от него стартует полёт в мини-плеер.
+    var lastArtBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     var hideArtAtCollapse by remember { mutableStateOf(false) }
 
     // Плеер тянется пальцем вниз; отпустил далеко — улетел за экран и свернулся,
@@ -138,17 +138,9 @@ fun NowPlayingScreen(
                             // Полёт обложки стартует с её текущего места (панель утащила
                             // её вниз на dragOffset) и несёт в уголок мини-плеера.
                             hideArtAtCollapse = true
-                            val visual = restingArt?.let { rest ->
-                                val p = (dragOffset.value / 480f).coerceIn(0f, 1f)
-                                val scale = 1f - ART_SHRINK * p
-                                val size = rest.width * scale
-                                val inset = 110f
-                                val miniLeft = miniBounds?.left ?: 36f
-                                val visTop = rest.top + ((dragOffset.value + inset) - rest.top) * p
-                                val visLeft = rest.left + (miniLeft - rest.left) * p
-                                androidx.compose.ui.geometry.Rect(visLeft, visTop, visLeft + size, visTop + size)
-                            }
-                            onCollapseCommit(visual ?: miniBounds ?: androidx.compose.ui.geometry.Rect.Zero)
+                            onCollapseCommit(
+                                lastArtBounds ?: miniBounds ?: androidx.compose.ui.geometry.Rect.Zero,
+                            )
                             scope.launch {
                                 dragOffset.animateTo(2400f, tween(230))
                                 onBack()
@@ -218,28 +210,17 @@ fun NowPlayingScreen(
                         size = 280.dp,
                         modifier = Modifier
                             .onGloballyPositioned { coords ->
-                                val b = coords.boundsInRoot()
-                                // Пока панель не поехала — это позиция покоя.
-                                if (dragOffset.value < 1f) restingArt = b
-                                onArtworkPosition(b)
+                                lastArtBounds = coords.boundsInRoot()
+                                onArtworkPosition(coords.boundsInRoot())
                             }
                             .graphicsLayer {
-                                // Обложка ПРИКОЛОЧЕНА к верхней кромке уезжающей панели
-                                // (чуть ниже иконок) и сжимается там — никогда не отрывается
-                                // от листа. В уголок мини-плеера её доносит оверлей.
+                                // Обложка сжимается вокруг своего левого-верхнего угла
+                                // (всегда остаётся на панели) по мере свайпа вниз.
                                 if (hideArtAtCollapse) { alpha = 0f; return@graphicsLayer }
-                                val rest = restingArt ?: return@graphicsLayer
-                                val drag = dragOffset.value
-                                if (drag <= 0f) return@graphicsLayer
-                                val p = (drag / 480f).coerceIn(0f, 1f)
+                                val p = (dragOffset.value / 480f).coerceIn(0f, 1f)
+                                if (dragOffset.value <= 0f) return@graphicsLayer
                                 transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                                val inset = 110f
-                                val miniLeft = miniBounds?.left ?: 36f
-                                val visTop = rest.top + ((drag + inset) - rest.top) * p
-                                val visLeft = rest.left + (miniLeft - rest.left) * p
                                 val scale = 1f - ART_SHRINK * p
-                                translationX = visLeft - rest.left
-                                translationY = visTop - (rest.top + drag)
                                 scaleX = scale
                                 scaleY = scale
                             },
