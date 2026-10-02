@@ -122,9 +122,7 @@ fun NowPlayingScreen(
         Modifier
             .fillMaxSize()
             .offset { IntOffset(0, dragOffset.value.roundToInt()) }
-            .graphicsLayer { alpha = 1f - (dragOffset.value / 1400f).coerceIn(0f, 0.55f) }
-            // Фон ПОСЛЕ offset/graphicsLayer: иначе он рисуется до сдвига и
-            // остаётся висеть на весь экран, пока контент уезжает — та самая «чернота».
+            // Без прозрачности: в YT Music панель едет вниз цельным непрозрачным листом.
             .background(MaterialTheme.colorScheme.background)
             .pointerInput(Unit) {
                 detectVerticalDragGestures(
@@ -134,12 +132,16 @@ fun NowPlayingScreen(
                     },
                     onDragEnd = {
                         if (dragOffset.value > 480f) {
-                            // Обложка уже доехала до уголка (морф за время драга) —
-                            // прячем свою и отдаём эстафету летящему оверлею.
+                            // Полёт обложки стартует с её текущего места (панель утащила
+                            // её вниз на dragOffset) и несёт в уголок мини-плеера.
                             hideArtAtCollapse = true
-                            onCollapseCommit(
-                                miniBounds ?: restingArt ?: androidx.compose.ui.geometry.Rect.Zero,
-                            )
+                            val visual = restingArt?.let {
+                                androidx.compose.ui.geometry.Rect(
+                                    it.left, it.top + dragOffset.value,
+                                    it.right, it.bottom + dragOffset.value,
+                                )
+                            }
+                            onCollapseCommit(visual ?: miniBounds ?: androidx.compose.ui.geometry.Rect.Zero)
                             scope.launch {
                                 dragOffset.animateTo(2400f, tween(230))
                                 onBack()
@@ -215,24 +217,19 @@ fun NowPlayingScreen(
                                 onArtworkPosition(b)
                             }
                             .graphicsLayer {
-                                if (hideArtAtCollapse) { alpha = 0f; return@graphicsLayer }
-                                val rest = restingArt ?: return@graphicsLayer
-                                val target = miniBounds ?: return@graphicsLayer
-                                val drag = dragOffset.value
-                                if (drag <= 0f) return@graphicsLayer
-                                val p = (drag / 480f).coerceIn(0f, 1f)
-                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
-                                // Едем к мини-плееру быстрее, чем панель уезжает вниз.
-                                val px = rest.left + (target.left - rest.left) * p
-                                val py = rest.top + (target.top - rest.top) * p
-                                translationX = px - rest.left
-                                translationY = py - (rest.top + drag)
-                                val scale = (rest.width + (target.width - rest.width) * p) / rest.width
-                                scaleX = scale
-                                scaleY = scale
+                                // Обложка едет вниз ВМЕСТЕ с панелью, оставаясь крупной
+                                // (как в YT Music); в уголок её несёт оверлей после коммита.
+                                if (hideArtAtCollapse) alpha = 0f
                             },
                     )
                     Spacer(Modifier.height(24.dp))
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            // Текст и кнопки гаснут в первые ~260px драга, обложка остаётся видимой.
+                            .graphicsLayer { alpha = 1f - (dragOffset.value / 260f).coerceIn(0f, 1f) },
+                    ) {
                     Text(
                         t.title,
                         style = MaterialTheme.typography.headlineLarge,
@@ -380,6 +377,7 @@ fun NowPlayingScreen(
                             .fillMaxWidth()
                             .padding(top = 20.dp),
                     )
+                    }
                 }
                 }
             }
